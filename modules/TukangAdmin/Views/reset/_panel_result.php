@@ -99,7 +99,7 @@
 
 <div class="d-grid gap-2">
     <button type="button" id="btn-again" class="btn btn-primary">
-        <i class="bi bi-arrow-repeat me-1"></i> Reset nomor lain
+        <i class="bi bi-arrow-repeat me-1"></i> Reset akun lain
     </button>
     <a href="<?= site_url('tukang-kirim/logs') ?>" class="btn btn-outline-secondary">
         <i class="bi bi-clock-history me-1"></i> Lihat riwayat kirim

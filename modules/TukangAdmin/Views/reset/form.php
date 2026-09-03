@@ -14,8 +14,8 @@
 <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
     <div>
         <h1 class="h3 mb-1">Reset Password TTE</h1>
-        <p class="text-muted mb-0">Masukkan nomor HP penandatangan. Sistem mencari akunnya di TTE,
-            mereset kata sandinya, lalu mengirimkannya lewat WhatsApp.</p>
+        <p class="text-muted mb-0">Cari penandatangan berdasarkan email atau NIK. Sistem menemukan akunnya
+            di TTE, mereset kata sandinya, lalu mengirimkannya lewat WhatsApp ke nomor HP dari data pengguna.</p>
     </div>
     <a href="<?= module_url('akun') ?>" class="btn btn-outline-secondary">
         <i class="bi bi-person-gear me-1"></i> Akun TTE
@@ -56,14 +56,23 @@
                 <?= csrf_field() ?>
                 <div class="card-body">
                     <div class="mb-3">
-                        <label class="form-label fw-semibold" for="phone">
-                            Nomor HP <span class="text-danger">*</span>
+                        <label class="form-label fw-semibold" for="by">Cari berdasarkan</label>
+                        <select class="form-select" id="by" name="by" <?= $hasCredential ? '' : 'disabled' ?>>
+                            <option value="email" selected>Email</option>
+                            <option value="nik">NIK</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" for="value">
+                            <span id="value-label">Email</span> <span class="text-danger">*</span>
                         </label>
-                        <input type="text" class="form-control form-control-lg" id="phone" name="phone"
-                               inputmode="tel" placeholder="08123456789" autocomplete="off" required
+                        <input type="text" class="form-control form-control-lg" id="value" name="value"
+                               inputmode="email" placeholder="nama@instansi.go.id" autocomplete="off" required
                                <?= $hasCredential ? '' : 'disabled' ?>>
-                        <div class="form-text">
-                            Nomor ini dipakai untuk mencari akun di TTE sekaligus tujuan pengiriman WhatsApp.
+                        <div class="form-text" id="value-help">
+                            Dipakai untuk mencari akun di TTE. Nomor HP tujuan WhatsApp diambil otomatis
+                            dari data pengguna yang ditemukan.
                         </div>
                     </div>
 
@@ -109,7 +118,7 @@
                                     <div class="fw-semibold">Cari akun</div>
                                     <div class="text-muted small">
                                         Sistem login ke TTE dan mencari akun <strong>penandatangan</strong>
-                                        yang cocok dengan nomor HP, lalu mengambil emailnya.
+                                        yang cocok dengan email atau NIK, lalu mengambil email dan nomor HP-nya.
                                     </div>
                                 </div>
                             </div>
@@ -164,7 +173,38 @@
     const errorBox    = document.getElementById('form-errors');
     const panelIdle   = document.getElementById('panel-idle');
     const panelServer = document.getElementById('panel-server');
-    const phoneInput  = document.getElementById('phone');
+    const valueInput  = document.getElementById('value');
+    const bySelect    = document.getElementById('by');
+    const valueLabel  = document.getElementById('value-label');
+    const valueHelp   = document.getElementById('value-help');
+
+    // Sesuaikan label/placeholder input mengikuti parameter pencarian terpilih.
+    if (bySelect) {
+        const presets = {
+            email: {
+                label: 'Email',
+                placeholder: 'nama@instansi.go.id',
+                inputmode: 'email',
+                help: 'Dipakai untuk mencari akun di TTE. Nomor HP tujuan WhatsApp diambil otomatis dari data pengguna yang ditemukan.',
+            },
+            nik: {
+                label: 'NIK',
+                placeholder: '16 digit NIK',
+                inputmode: 'numeric',
+                help: 'Dipakai untuk mencari akun di TTE bila email lupa. Nomor HP tujuan WhatsApp diambil otomatis dari data pengguna yang ditemukan.',
+            },
+        };
+
+        bySelect.addEventListener('change', () => {
+            const p = presets[bySelect.value] || presets.email;
+            valueLabel.textContent = p.label;
+            valueInput.placeholder = p.placeholder;
+            valueInput.setAttribute('inputmode', p.inputmode);
+            valueHelp.textContent = p.help;
+            valueInput.value = '';
+            valueInput.focus();
+        });
+    }
 
     function showIdle() {
         panelServer.hidden = true;
@@ -282,9 +322,9 @@
         }
 
         if (event.target.closest('#btn-again')) {
-            phoneInput.value = '';
+            valueInput.value = '';
             showIdle();
-            phoneInput.focus();
+            valueInput.focus();
 
             return;
         }

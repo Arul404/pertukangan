@@ -52,7 +52,13 @@
     </div>
     <div class="card-body">
         <dl class="row mb-3 small">
-            <dt class="col-4 text-muted fw-normal">Nomor diketik</dt>
+            <dt class="col-4 text-muted fw-normal">Dicari via</dt>
+            <dd class="col-8">
+                <span class="badge text-bg-secondary"><?= strtoupper(esc($draft['search_by'] ?? 'email')) ?></span>
+                <?= esc($draft['search_value'] ?? '') ?>
+            </dd>
+
+            <dt class="col-4 text-muted fw-normal">Nomor ditemukan</dt>
             <dd class="col-8"><?= esc($draft['phone_input']) ?></dd>
 
             <dt class="col-4 text-muted fw-normal">Dikirim ke</dt>

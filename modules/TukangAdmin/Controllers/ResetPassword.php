@@ -72,7 +72,10 @@ class ResetPassword extends BaseController
             return redirect()->to(module_url());
         }
 
-        $phone      = trim((string) $this->request->getPost('phone'));
+        // Pencarian berdasarkan email atau NIK (parameter q di halaman /users).
+        // Nomor HP tidak lagi diketik; diambil dari hasil pencarian.
+        $by         = strtolower(trim((string) $this->request->getPost('by'))) ?: 'email';
+        $value      = trim((string) $this->request->getPost('value'));
         $templateId = (int) $this->request->getPost('template_id');
 
         $credential = $this->credentials->current();
@@ -89,8 +92,14 @@ class ResetPassword extends BaseController
 
         $errors = [];
 
-        if ($phone === '') {
-            $errors[] = 'Nomor HP wajib diisi.';
+        if (! in_array($by, ['email', 'nik'], true)) {
+            $errors[] = 'Parameter pencarian tidak dikenal.';
+        } elseif ($value === '') {
+            $errors[] = ($by === 'nik' ? 'NIK' : 'Email') . ' wajib diisi.';
+        } elseif ($by === 'email' && ! filter_var($value, FILTER_VALIDATE_EMAIL)) {
+            $errors[] = 'Masukkan alamat email yang valid.';
+        } elseif ($by === 'nik' && preg_match('/^\d{6,20}$/', $value) !== 1) {
+            $errors[] = 'NIK harus berupa angka (6–20 digit).';
         }
 
         // Template ini harus memuat [password] — kalau tidak, kata sandi yang
@@ -106,14 +115,21 @@ class ResetPassword extends BaseController
         try {
             $scraper = new TteScraper(null, $credential['base_url'] ?? null);
             $scraper->login($credential['username'], $this->credentials->plainPassword($credential));
-            $user = $scraper->findPenandatangan($phone);
+            $user = $scraper->findPenandatangan($value);
         } catch (TteScraperException $e) {
             return $this->panel('error', null, [$e->getMessage()]);
         } catch (Throwable $e) {
             return $this->panel('error', null, ['Kesalahan tak terduga saat menghubungi TTE: ' . $e->getMessage()]);
         }
 
-        $normalized = $this->maxchat->normalizeNumber($phone);
+        // Nomor HP diambil dari data pengguna; tanpa itu pesan tak bisa dikirim.
+        if (empty($user['phone'])) {
+            return $this->panel('error', null, [
+                'Nomor HP tidak ditemukan pada data pengguna di TTE, sehingga kata sandi tidak bisa dikirim.',
+            ]);
+        }
+
+        $normalized = $this->maxchat->normalizeNumber($user['phone']);
         $password   = (new PasswordGenerator())->generate();
 
         // Nilai otomatis yang bisa mengisi placeholder template. Placeholder
@@ -140,7 +156,10 @@ class ResetPassword extends BaseController
         $text = $this->parser->render($template['body'], $auto);
 
         $draft = [
-            'phone_input'      => $phone,
+            'search_by'        => $by,
+            'search_value'     => $value,
+            // recipient_input pada riwayat memakai nomor mentah dari TTE.
+            'phone_input'      => $user['phone'],
             'phone_normalized' => $normalized,
             'email'            => $user['email'],
             'name'             => $user['name'],

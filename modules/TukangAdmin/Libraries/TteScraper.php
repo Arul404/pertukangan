@@ -76,20 +76,24 @@ class TteScraper
     }
 
     /**
-     * Cari pengguna ber-role penandatangan lewat nomor HP.
+     * Cari pengguna ber-role penandatangan lewat kata kunci (email atau NIK).
      *
-     * @return array{email: string, name: string, change_url: string, role: string}
+     * Halaman /users memakai satu kotak pencarian bebas (parameter q), jadi
+     * email maupun NIK sama-sama diteruskan sebagai kata kunci. Nomor HP tidak
+     * lagi diketik operator melainkan dibaca dari baris hasil pencarian.
+     *
+     * @return array{email: string, name: string, phone: ?string, change_url: string, role: string}
      */
-    public function findPenandatangan(string $phone): array
+    public function findPenandatangan(string $query): array
     {
         $url = $this->baseUrl . $this->config->usersPath
-            . '?' . http_build_query([$this->config->searchParam => $phone]);
+            . '?' . http_build_query([$this->config->searchParam => $query]);
         $page = $this->request('GET', $url);
 
         $rows = $this->tableRows($page['body']);
 
         if ($rows === []) {
-            throw new TteScraperException('Tidak ada pengguna yang cocok dengan nomor "' . $phone . '".');
+            throw new TteScraperException('Tidak ada pengguna yang cocok dengan "' . $query . '".');
         }
 
         $target   = strtolower($this->config->targetRole);
@@ -118,6 +122,7 @@ class TteScraper
             return [
                 'email'      => $email,
                 'name'       => $this->nameFrom($row['node'], $email),
+                'phone'      => $this->phoneFrom($row['text']),
                 'change_url' => $changeUrl,
                 'role'       => $this->config->targetRole,
             ];
@@ -129,7 +134,7 @@ class TteScraper
         }
 
         throw new TteScraperException('Tidak ada pengguna ber-role "' . $this->config->targetRole
-            . '" untuk nomor "' . $phone . '".');
+            . '" untuk kata kunci "' . $query . '".');
     }
 
     /**
@@ -300,6 +305,27 @@ class TteScraper
     {
         if (preg_match('/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/', $text, $m) === 1) {
             return $m[0];
+        }
+
+        return null;
+    }
+
+    /**
+     * Nomor HP seluler Indonesia pertama yang muncul di sepotong teks.
+     *
+     * Sengaja di-anchor ke awalan seluler (08/62/+62 diikuti 8) supaya NIK
+     * (16 digit yang tidak berawalan itu) tidak salah tertangkap sebagai nomor.
+     * Pemisah umum (spasi, titik, tanda hubung, kurung) dibersihkan per baris
+     * sebelum dicocokkan agar nomor berformat "0812-3456-7890" tetap terbaca.
+     */
+    protected function phoneFrom(string $text): ?string
+    {
+        foreach (preg_split('/\R/', $text) ?: [$text] as $line) {
+            $clean = preg_replace('/[\s().\-]/', '', $line);
+
+            if (is_string($clean) && preg_match('/(?:\+?62|0)8\d{7,12}/', $clean, $m) === 1) {
+                return $m[0];
+            }
         }
 
         return null;
