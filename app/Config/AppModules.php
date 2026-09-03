@@ -20,6 +20,7 @@ class AppModules extends BaseConfig
      */
     public array $modules = [
         \Modules\TukangKirim\Config\Module::class,
+        \Modules\TukangAdmin\Config\Module::class,
     ];
 
     /**

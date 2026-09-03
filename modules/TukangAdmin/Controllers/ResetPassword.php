@@ -1,0 +1,299 @@
+<?php
+
+namespace Modules\TukangAdmin\Controllers;
+
+use App\Controllers\BaseController;
+use CodeIgniter\HTTP\RedirectResponse;
+use CodeIgniter\HTTP\ResponseInterface;
+use Modules\TukangAdmin\Config\Module;
+use Modules\TukangAdmin\Libraries\TteScraper;
+use Modules\TukangAdmin\Libraries\TteScraperException;
+use Modules\TukangAdmin\Models\TteCredentialModel;
+use Modules\TukangKirim\Libraries\MaxChatDispatcher;
+use Modules\TukangKirim\Libraries\MaxChatService;
+use Modules\TukangKirim\Libraries\PasswordGenerator;
+use Modules\TukangKirim\Libraries\PlaceholderParser;
+use Modules\TukangKirim\Models\MaxchatAccountModel;
+use Modules\TukangKirim\Models\MessageLogModel;
+use Modules\TukangKirim\Models\TemplateModel;
+use Throwable;
+
+/**
+ * Reset kata sandi TTE dalam satu halaman, dua langkah POST lewat fetch().
+ *
+ * Langkah 1 (search): scraper login ke TTE, mencari akun penandatangan lewat
+ * nomor HP, mengambil emailnya, dan membangkitkan kata sandi acak. Semuanya
+ * disimpan sebagai draft di session dan ditampilkan untuk dikonfirmasi — kata
+ * sandi TTE BELUM diubah pada tahap ini.
+ *
+ * Langkah 2 (dispatch): baru di sini kata sandi TTE benar-benar diganti, lalu
+ * kata sandi + email dikirim ke nomor HP memakai pipeline kirim milik Tukang
+ * Kirim (template + MaxChatDispatcher + MessageLogModel), lengkap dengan
+ * penyamaran kata sandi di riwayat persis seperti Send::dispatch.
+ *
+ * Kata sandi yang dibangkitkan hidup hanya di session sampai langkah 2 selesai.
+ */
+class ResetPassword extends BaseController
+{
+    protected const DRAFT_KEY = 'tukang_admin_reset_draft';
+
+    protected TemplateModel $templates;
+    protected TteCredentialModel $credentials;
+    protected PlaceholderParser $parser;
+    protected MaxChatService $maxchat;
+    protected MaxChatDispatcher $dispatcher;
+
+    public function __construct()
+    {
+        $this->templates   = new TemplateModel();
+        $this->credentials = new TteCredentialModel();
+        $this->parser      = new PlaceholderParser();
+        $this->maxchat     = new MaxChatService();
+        $this->dispatcher  = new MaxChatDispatcher();
+    }
+
+    public function index(): string
+    {
+        return view(Module::VIEWS . 'reset/form', [
+            'title'          => 'Reset Password',
+            'templates'      => $this->templates->activeForSend(),
+            'hasCredential'  => $this->credentials->current() !== null,
+            'activeAccounts' => (new MaxchatAccountModel())->activeCount(),
+            'maxchat'        => $this->maxchat,
+        ]);
+    }
+
+    /**
+     * Langkah 1 — cari akun, bangkitkan sandi, susun draft (AJAX).
+     */
+    public function search(): ResponseInterface|RedirectResponse
+    {
+        if (! $this->request->isAJAX()) {
+            return redirect()->to(module_url());
+        }
+
+        $phone      = trim((string) $this->request->getPost('phone'));
+        $templateId = (int) $this->request->getPost('template_id');
+
+        $credential = $this->credentials->current();
+
+        if ($credential === null) {
+            return $this->panel('error', null, ['Belum ada kredensial TTE. Isi dulu di menu Akun TTE.']);
+        }
+
+        $template = $templateId > 0 ? $this->templates->find($templateId) : null;
+
+        if ($template === null) {
+            return $this->panel('error', null, ['Template pesan belum dipilih atau sudah tidak tersedia.']);
+        }
+
+        $errors = [];
+
+        if ($phone === '') {
+            $errors[] = 'Nomor HP wajib diisi.';
+        }
+
+        // Template ini harus memuat [password] — kalau tidak, kata sandi yang
+        // di-reset tidak akan pernah ikut terkirim ke penerima.
+        if (! $this->parser->hasPassword($template['body'])) {
+            $errors[] = 'Template harus memuat placeholder [password] agar kata sandi baru ikut terkirim.';
+        }
+
+        if ($errors !== []) {
+            return $this->panel('error', null, $errors);
+        }
+
+        try {
+            $scraper = new TteScraper(null, $credential['base_url'] ?? null);
+            $scraper->login($credential['username'], $this->credentials->plainPassword($credential));
+            $user = $scraper->findPenandatangan($phone);
+        } catch (TteScraperException $e) {
+            return $this->panel('error', null, [$e->getMessage()]);
+        } catch (Throwable $e) {
+            return $this->panel('error', null, ['Kesalahan tak terduga saat menghubungi TTE: ' . $e->getMessage()]);
+        }
+
+        $normalized = $this->maxchat->normalizeNumber($phone);
+        $password   = (new PasswordGenerator())->generate();
+
+        // Nilai otomatis yang bisa mengisi placeholder template. Placeholder
+        // manual di luar daftar ini dianggap tidak didukung modul ini.
+        $auto = [
+            'email'    => $user['email'],
+            'nama'     => $user['name'],
+            'nomor'    => $normalized,
+            'no_hp'    => $normalized,
+            'hp'       => $normalized,
+            'telepon'  => $normalized,
+            'password' => $password,
+        ];
+
+        foreach ($this->parser->manual($template['body']) as $name) {
+            if (! array_key_exists($name, $auto)) {
+                return $this->panel('error', null, [
+                    'Placeholder [' . $name . '] pada template tidak didukung modul ini. '
+                        . 'Gunakan hanya [email], [nama], [nomor], dan [password].',
+                ]);
+            }
+        }
+
+        $text = $this->parser->render($template['body'], $auto);
+
+        $draft = [
+            'phone_input'      => $phone,
+            'phone_normalized' => $normalized,
+            'email'            => $user['email'],
+            'name'             => $user['name'],
+            'role'             => $user['role'],
+            'change_url'       => $user['change_url'],
+            'password'         => $password,
+            'template_id'      => (int) $template['id'],
+            'template_name'    => $template['name'],
+            'text'             => $text,
+        ];
+
+        session()->set(self::DRAFT_KEY, $draft);
+
+        return $this->panel('preview', view(Module::VIEWS . 'reset/_panel_preview', [
+            'draft'       => $draft,
+            'maxchat'     => $this->maxchat,
+            'nextAccount' => $this->dispatcher->peek(),
+        ]));
+    }
+
+    /**
+     * Langkah 2 — ubah kata sandi di TTE, lalu kirim ke nomor HP (AJAX).
+     */
+    public function dispatch(): ResponseInterface|RedirectResponse
+    {
+        if (! $this->request->isAJAX()) {
+            return redirect()->to(module_url());
+        }
+
+        $draft = session(self::DRAFT_KEY);
+
+        // Draft sekali pakai: begitu diproses ia dibuang, jadi klik ganda atau
+        // session kedaluwarsa tidak bisa memicu reset kedua.
+        if (! is_array($draft) || empty($draft['change_url']) || empty($draft['password'])) {
+            return $this->panel('error', null, ['Draft sudah tidak ada. Silakan ulangi pencarian nomor.']);
+        }
+
+        $credential = $this->credentials->current();
+
+        if ($credential === null) {
+            return $this->panel('error', null, ['Kredensial TTE hilang. Isi ulang di menu Akun TTE.']);
+        }
+
+        // Ubah kata sandi di TTE lebih dulu. Bila gagal, tidak ada yang dikirim.
+        try {
+            $scraper = new TteScraper(null, $credential['base_url'] ?? null);
+            $scraper->login($credential['username'], $this->credentials->plainPassword($credential));
+            $scraper->changePassword(['change_url' => $draft['change_url']], $draft['password']);
+        } catch (TteScraperException $e) {
+            session()->remove(self::DRAFT_KEY);
+
+            return $this->panel('error', null, ['Reset gagal: ' . $e->getMessage()]);
+        } catch (Throwable $e) {
+            session()->remove(self::DRAFT_KEY);
+
+            return $this->panel('error', null, ['Kesalahan tak terduga saat mengubah kata sandi: ' . $e->getMessage()]);
+        }
+
+        // Kata sandi berhasil diubah — kirim ke nomor HP lewat pipeline Tukang Kirim.
+        $outcome = $this->dispatcher->send($draft['phone_normalized'], $draft['text']);
+        $result  = $outcome['final'];
+
+        $this->recordLogs($draft, $outcome);
+
+        $failed = [];
+
+        foreach ($outcome['attempts'] as $attempt) {
+            if (! $attempt['result']['ok']) {
+                $failed[] = [
+                    'account' => $attempt['account']['name'],
+                    'error'   => $attempt['result']['error'] ?? 'Penyebab tidak diketahui.',
+                ];
+            }
+        }
+
+        session()->remove(self::DRAFT_KEY);
+
+        return $this->panel('result', view(Module::VIEWS . 'reset/_panel_result', [
+            'result' => [
+                'email'      => $draft['email'],
+                'name'       => $draft['name'],
+                'role'       => $draft['role'],
+                'password'   => $draft['password'],
+                'recipient'  => $draft['phone_normalized'],
+                'text'       => $draft['text'],
+                'status'     => $result['status'],
+                'ok'         => $result['ok'],
+                'http_code'  => $result['http_code'],
+                'body'       => $result['body'],
+                'error'      => $result['error'],
+                'account'    => $outcome['ok'] ? ($outcome['account']['name'] ?? null) : null,
+                'failed'     => $failed,
+            ],
+        ]));
+    }
+
+    /**
+     * Catat tiap percobaan kirim ke riwayat Tukang Kirim, dengan kata sandi
+     * disamarkan — pola yang sama persis dengan Send::dispatch.
+     *
+     * @param array<string, mixed> $draft
+     * @param array<string, mixed> $outcome
+     */
+    protected function recordLogs(array $draft, array $outcome): void
+    {
+        $password = $draft['password'];
+        $mask     = static fn (?string $text): ?string => $text !== null
+            ? str_replace($password, str_repeat('*', 8), $text)
+            : $text;
+
+        $masked = (string) $mask($draft['text']);
+        $logs   = new MessageLogModel();
+
+        $row = static fn (array $attemptResult, ?array $account, int $no): array => [
+            'template_id'          => $draft['template_id'],
+            'maxchat_account_id'   => $account !== null ? (int) $account['id'] : null,
+            'template_name'        => $draft['template_name'],
+            'account_name'         => $account['name'] ?? null,
+            'recipient_input'      => $draft['phone_input'],
+            'recipient_normalized' => $draft['phone_normalized'],
+            'message_masked'       => $masked,
+            'has_password'         => 1,
+            'status'               => $attemptResult['status'],
+            'http_code'            => $attemptResult['http_code'],
+            'api_response'         => $mask($attemptResult['body']),
+            'error_message'        => $attemptResult['error'],
+            'attempt_no'           => $no,
+        ];
+
+        if ($outcome['attempts'] === []) {
+            $logs->insert($row($outcome['final'], null, 1));
+
+            return;
+        }
+
+        foreach ($outcome['attempts'] as $index => $attempt) {
+            $logs->insert($row($attempt['result'], $attempt['account'], $index + 1));
+        }
+    }
+
+    /**
+     * Satu bentuk respons AJAX: potongan HTML panel + hash CSRF baru (wajib
+     * karena Config\Security::$regenerate = true).
+     *
+     * @param list<string> $errors
+     */
+    protected function panel(string $state, ?string $html = null, array $errors = []): ResponseInterface
+    {
+        return $this->response->setJSON([
+            'state'  => $state,
+            'html'   => $html,
+            'errors' => $errors,
+            'csrf'   => csrf_hash(),
+        ]);
+    }
+}

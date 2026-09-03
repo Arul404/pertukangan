@@ -40,6 +40,7 @@ class Autoload extends AutoloadConfig
     public $psr4 = [
         APP_NAMESPACE           => APPPATH,
         'Modules\TukangKirim'   => ROOTPATH . 'modules/TukangKirim',
+        'Modules\TukangAdmin'   => ROOTPATH . 'modules/TukangAdmin',
     ];
 
     /**
