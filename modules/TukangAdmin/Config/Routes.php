@@ -27,4 +27,18 @@ $routes->group(Module::SLUG, ['namespace' => 'Modules\TukangAdmin\Controllers'],
         $routes->post('save', 'TteAccount::save');
         $routes->post('test', 'TteAccount::test');
     });
+
+    // --- Reset passphrase BSrE: satu halaman, dua langkah POST lewat fetch() ---
+    $routes->group('passphrase', static function ($routes): void {
+        $routes->get('/', 'ResetPassphrase::index');
+        $routes->post('search', 'ResetPassphrase::search');
+        $routes->post('dispatch', 'ResetPassphrase::dispatch');
+    });
+
+    // --- Kredensial login BSrE + hubungkan (login Keycloak + TOTP) ---
+    $routes->group('akun-bsre', static function ($routes): void {
+        $routes->get('/', 'BsreAccount::index');
+        $routes->post('save', 'BsreAccount::save');
+        $routes->post('login', 'BsreAccount::login');
+    });
 });

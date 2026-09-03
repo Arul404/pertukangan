@@ -51,8 +51,10 @@ class Module extends ModuleDefinition
     public function menu(): array
     {
         return [
-            ['label' => 'Reset Password', 'icon' => 'bi-key',         'path' => ''],
-            ['label' => 'Akun TTE',       'icon' => 'bi-person-gear', 'path' => 'akun'],
+            ['label' => 'Reset Password',    'icon' => 'bi-key',          'path' => ''],
+            ['label' => 'Akun TTE',          'icon' => 'bi-person-gear',  'path' => 'akun'],
+            ['label' => 'Reset Passphrase',  'icon' => 'bi-key-fill',     'path' => 'passphrase'],
+            ['label' => 'Akun BSrE',         'icon' => 'bi-shield-lock',  'path' => 'akun-bsre'],
         ];
     }
 }
