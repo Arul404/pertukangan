@@ -157,10 +157,11 @@ class BsreClient
     // ---------------------------------------------------------------------
 
     /**
-     * Cari satu pengguna berdasarkan email, lalu ambil detail sertifikatnya.
+     * Cari satu pengguna berdasarkan email atau NIK, lalu ambil detail sertifikatnya.
      *
-     * Meniru alur operator: cari di /users/list dengan parameter Email, buka
-     * baris yang cocok (Detail), lalu baca tab Sertifikat Elektronik.
+     * Meniru alur operator: pilih "Cari data berdasarkan" (Email/NIK) di
+     * /users/list, buka baris yang cocok (Detail), lalu baca tab Sertifikat
+     * Elektronik. `$filterKey` adalah key filter server untuk parameter terpilih.
      *
      * @return array{
      *     uid: string,
@@ -171,32 +172,35 @@ class BsreClient
      *     certificates: list<array{serial: string, jenis: ?string, notAfter: ?string, raw: array}>
      * }
      */
-    public function findUserByEmail(string $email): array
+    public function findUser(string $value, string $filterKey = 'email'): array
     {
         $this->requireToken();
 
         $list = $this->request('POST', $this->config->userListPath, [
-            'search'  => $email,
+            // `search` (free-text) selalu ikut agar tetap ketemu meski key filter
+            // meleset; `filters` menyaring sesuai parameter (email/nik) terpilih.
+            'search'  => $value,
             'start'   => 0,
             'length'  => 10,
-            'filters' => ['email' => $email],
+            'filters' => [$filterKey => $value],
         ]);
 
         $rows = $this->rowsOf($list['json']);
 
         if ($rows === []) {
-            throw new BsreClientException('Tidak ada pengguna dengan email "' . $email . '".');
+            throw new BsreClientException('Tidak ada pengguna dengan ' . $filterKey . ' "' . $value . '".');
         }
 
-        $uid = $this->uidForEmail($rows, $email);
+        $uid = $this->uidForValue($rows, $value);
 
         if ($uid === null) {
             throw new BsreClientException(
-                'Baris pengguna untuk "' . $email . '" ditemukan, tetapi id-nya tidak terbaca.'
+                'Baris pengguna untuk "' . $value . '" ditemukan, tetapi id-nya tidak terbaca.'
             );
         }
 
-        return $this->userDetails($uid, $email);
+        // Fallback email hanya bermakna bila pencarian memang lewat email.
+        return $this->userDetails($uid, $filterKey === 'email' ? $value : '');
     }
 
     /**
@@ -474,13 +478,14 @@ class BsreClient
     }
 
     /**
-     * uid dari baris yang emailnya cocok; bila hanya satu baris, ambil itu.
+     * uid dari baris yang memuat nilai pencarian (email/NIK); bila hanya satu
+     * baris, ambil itu.
      *
      * @param list<mixed> $rows
      */
-    protected function uidForEmail(array $rows, string $email): ?string
+    protected function uidForValue(array $rows, string $value): ?string
     {
-        $needle = strtolower(trim($email));
+        $needle = strtolower(trim($value));
         $single = count($rows) === 1 ? $this->uidOf($rows[0]) : null;
 
         foreach ($rows as $row) {

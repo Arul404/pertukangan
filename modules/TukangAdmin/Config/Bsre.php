@@ -51,6 +51,21 @@ class Bsre extends BaseConfig
     public string $userListPath = '/api/rest/manage/user/list';
 
     /**
+     * Parameter pencarian yang didukung → key filter pada body {@see $userListPath}.
+     *
+     * Setara pilihan "Cari data berdasarkan" di portal (Email atau NIK). Nilai
+     * pencarian selalu ikut dikirim sebagai `search` (free-text) agar tetap
+     * ketemu meski key filter berubah; bila key filter server berbeda, cukup
+     * sesuaikan di sini (mis. lewat `.env`: `bsre.searchParams.nik = 'nomorNik'`).
+     *
+     * @var array<string, string>
+     */
+    public array $searchParams = [
+        'email' => 'email',
+        'nik'   => 'nik',
+    ];
+
+    /**
      * Endpoint detail pengguna (GET). Diakhiri dengan uid.
      * Balikan: data.data.sertifikat[], data.data.profile.
      */

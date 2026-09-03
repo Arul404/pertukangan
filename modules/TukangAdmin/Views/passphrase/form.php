@@ -45,14 +45,22 @@
         <form method="post" action="<?= module_url('passphrase/search') ?>" id="passphrase-form" class="card shadow-sm">
             <?= csrf_field() ?>
             <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold" for="by">Cari berdasarkan</label>
+                    <select class="form-select" id="by" name="by" <?= $ready ? '' : 'disabled' ?>>
+                        <option value="email" selected>Email</option>
+                        <option value="nik">NIK</option>
+                    </select>
+                </div>
+
                 <div class="mb-1">
-                    <label class="form-label fw-semibold" for="email">
-                        Email akun <span class="text-danger">*</span>
+                    <label class="form-label fw-semibold" for="value">
+                        <span id="value-label">Email akun</span> <span class="text-danger">*</span>
                     </label>
-                    <input type="email" class="form-control form-control-lg" id="email" name="email"
+                    <input type="text" class="form-control form-control-lg" id="value" name="value"
                            inputmode="email" placeholder="nama@instansi.go.id" autocomplete="off" required
                            <?= $ready ? '' : 'disabled' ?>>
-                    <div class="form-text">
+                    <div class="form-text" id="value-help">
                         Email ini dipakai untuk mencari akun di portal BSrE (parameter Email).
                     </div>
                 </div>
@@ -135,7 +143,38 @@
     const errorBox    = document.getElementById('form-errors');
     const panelIdle   = document.getElementById('panel-idle');
     const panelServer = document.getElementById('panel-server');
-    const emailInput  = document.getElementById('email');
+    const valueInput  = document.getElementById('value');
+    const bySelect    = document.getElementById('by');
+    const valueLabel  = document.getElementById('value-label');
+    const valueHelp   = document.getElementById('value-help');
+
+    // Sesuaikan label/placeholder input mengikuti parameter pencarian terpilih.
+    if (bySelect) {
+        const presets = {
+            email: {
+                label: 'Email akun',
+                placeholder: 'nama@instansi.go.id',
+                inputmode: 'email',
+                help: 'Email ini dipakai untuk mencari akun di portal BSrE (parameter Email).',
+            },
+            nik: {
+                label: 'NIK',
+                placeholder: '16 digit NIK',
+                inputmode: 'numeric',
+                help: 'NIK dipakai untuk mencari akun bila email lupa (parameter NIK).',
+            },
+        };
+
+        bySelect.addEventListener('change', () => {
+            const p = presets[bySelect.value] || presets.email;
+            valueLabel.textContent = p.label;
+            valueInput.placeholder = p.placeholder;
+            valueInput.setAttribute('inputmode', p.inputmode);
+            valueHelp.textContent = p.help;
+            valueInput.value = '';
+            valueInput.focus();
+        });
+    }
 
     function showIdle() {
         panelServer.hidden = true;
@@ -254,14 +293,14 @@
             }
 
             if (event.target.closest('#btn-again')) {
-                emailInput.value = '';
+                valueInput.value = '';
                 showIdle();
-                emailInput.focus();
+                valueInput.focus();
             }
         });
 
-        // Bila email diubah, panel konfirmasi jadi basi dan dibuang supaya tombol
-        // aksi tidak sempat memakai draft lama. Panel hasil dikecualikan.
+        // Bila nilai/parameter diubah, panel konfirmasi jadi basi dan dibuang supaya
+        // tombol aksi tidak sempat memakai draft lama. Panel hasil dikecualikan.
         for (const type of ['input', 'change']) {
             form.addEventListener(type, () => {
                 clearErrors();

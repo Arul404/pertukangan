@@ -5,6 +5,7 @@ namespace Modules\TukangAdmin\Controllers;
 use App\Controllers\BaseController;
 use CodeIgniter\HTTP\RedirectResponse;
 use CodeIgniter\HTTP\ResponseInterface;
+use Modules\TukangAdmin\Config\Bsre as BsreConfig;
 use Modules\TukangAdmin\Config\Module;
 use Modules\TukangAdmin\Libraries\BsreClient;
 use Modules\TukangAdmin\Libraries\BsreClientException;
@@ -63,17 +64,33 @@ class ResetPassphrase extends BaseController
             return $this->panel('error', null, ['Belum terhubung ke BSrE. Login dulu di menu Akun BSrE.']);
         }
 
-        $email = trim((string) $this->request->getPost('email'));
+        // Parameter pencarian: email (default) atau nik. Meniru "Cari data
+        // berdasarkan" di portal, untuk mitigasi bila operator lupa email.
+        $searchParams = config(BsreConfig::class)->searchParams;
+        $by           = strtolower(trim((string) $this->request->getPost('by'))) ?: 'email';
+        $value        = trim((string) $this->request->getPost('value'));
 
-        if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        if (! array_key_exists($by, $searchParams)) {
+            return $this->panel('error', null, ['Parameter pencarian tidak dikenal.']);
+        }
+
+        if ($value === '') {
+            return $this->panel('error', null, ['Nilai pencarian wajib diisi.']);
+        }
+
+        if ($by === 'email' && ! filter_var($value, FILTER_VALIDATE_EMAIL)) {
             return $this->panel('error', null, ['Masukkan alamat email yang valid.']);
+        }
+
+        if ($by === 'nik' && preg_match('/^\d{6,20}$/', $value) !== 1) {
+            return $this->panel('error', null, ['NIK harus berupa angka (6–20 digit).']);
         }
 
         $credential = $this->credentials->current();
 
         try {
             $client = (new BsreClient(null, $credential['base_url'] ?? null))->withToken($token);
-            $user   = $client->findUserByEmail($email);
+            $user   = $client->findUser($value, $searchParams[$by]);
         } catch (BsreClientException $e) {
             return $this->panel('error', null, [$e->getMessage()]);
         } catch (Throwable $e) {
