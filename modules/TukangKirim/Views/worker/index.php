@@ -30,9 +30,22 @@
         <p class="text-muted mb-0">Pantau dan kelola pengiriman WhatsApp yang berjalan di latar
             (satu-per-satu dengan jeda, agar tidak diblokir).</p>
     </div>
-    <a href="<?= module_url('logs') ?>" class="btn btn-outline-secondary">
-        <i class="bi bi-clock-history me-1"></i> Riwayat Kirim
-    </a>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" role="switch" id="auto-refresh">
+            <label class="form-check-label small" for="auto-refresh">Auto-refresh</label>
+        </div>
+        <select class="form-select form-select-sm" id="auto-interval" style="width:auto">
+            <option value="5">5 dtk</option>
+            <option value="10" selected>10 dtk</option>
+            <option value="15">15 dtk</option>
+            <option value="30">30 dtk</option>
+        </select>
+        <span class="text-muted small" id="refresh-countdown" style="min-width:9rem"></span>
+        <a href="<?= module_url('logs') ?>" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-clock-history me-1"></i> Riwayat Kirim
+        </a>
+    </div>
 </div>
 
 <!-- ===== Status ===== -->
@@ -232,6 +245,41 @@
     const STATUS_URL = <?= json_encode(module_url('worker/status')) ?>;
     const FLUSH_URL  = <?= json_encode(module_url('worker/flush')) ?>;
     const CSRF_NAME  = <?= json_encode(csrf_token()) ?>;
+
+    // ===== Auto-refresh: muat ulang halaman berkala agar daftar antrean yang
+    // sudah diproses langsung terlihat berkurang. Pilihan disimpan di browser.
+    (function () {
+        const AR_ON = 'tk_worker_ar_on';
+        const AR_IV = 'tk_worker_ar_iv';
+        const cb = document.getElementById('auto-refresh');
+        const sel = document.getElementById('auto-interval');
+        const cd = document.getElementById('refresh-countdown');
+        let timer = null;
+
+        const store = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+        const load  = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+
+        // Pulihkan pilihan tersimpan.
+        if (load(AR_ON) === '1') cb.checked = true;
+        if (load(AR_IV)) sel.value = load(AR_IV);
+
+        function schedule() {
+            clearInterval(timer);
+            if (!cb.checked) { cd.textContent = ''; return; }
+
+            let remain = parseInt(sel.value, 10) || 10;
+            cd.textContent = 'muat ulang dalam ' + remain + ' dtk';
+            timer = setInterval(() => {
+                remain -= 1;
+                if (remain <= 0) { clearInterval(timer); location.reload(); return; }
+                cd.textContent = 'muat ulang dalam ' + remain + ' dtk';
+            }, 1000);
+        }
+
+        cb.addEventListener('change', () => { store(AR_ON, cb.checked ? '1' : '0'); schedule(); });
+        sel.addEventListener('change', () => { store(AR_IV, sel.value); schedule(); });
+        schedule();
+    })();
 
     function fmtAge(s) {
         if (s === null || s === undefined) return '—';
