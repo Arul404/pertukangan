@@ -144,7 +144,20 @@ class ResetPassword extends BaseController
         }
 
         $normalized = $this->maxchat->normalizeNumber($phone);
-        $password   = (new PasswordGenerator())->generate();
+
+        // Pastikan nomor tujuan berupa nomor seluler Indonesia yang wajar sebelum
+        // dikirim ke MaxChat — mencegah 503 "Error send message" dari nomor cacat
+        // (mis. hasil ekstraksi TTE yang tergabung dengan angka kolom lain).
+        if (preg_match('/^628[1-9]\d{7,10}$/', $normalized) !== 1) {
+            return $this->panel('error', null, [
+                'Nomor HP tujuan tidak valid: "' . $phone . '" (jadi ' . $normalized . '). '
+                . ($by === 'nohp'
+                    ? 'Periksa kembali nomor yang Anda masukkan.'
+                    : 'Nomor dari data pengguna di TTE tampak tidak wajar — gunakan opsi "No HP" untuk mengirim ke nomor yang benar.'),
+            ]);
+        }
+
+        $password = (new PasswordGenerator())->generate();
 
         // Nilai otomatis yang bisa mengisi placeholder template. Placeholder
         // manual di luar daftar ini dianggap tidak didukung modul ini.

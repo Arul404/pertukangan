@@ -313,18 +313,21 @@ class TteScraper
     /**
      * Nomor HP seluler Indonesia pertama yang muncul di sepotong teks.
      *
-     * Sengaja di-anchor ke awalan seluler (08/62/+62 diikuti 8) supaya NIK
-     * (16 digit yang tidak berawalan itu) tidak salah tertangkap sebagai nomor.
-     * Pemisah umum (spasi, titik, tanda hubung, kurung) dibersihkan per baris
-     * sebelum dicocokkan agar nomor berformat "0812-3456-7890" tetap terbaca.
+     * Pencocokan dilakukan PER TOKEN (dipisah spasi/baris), bukan pada teks yang
+     * sudah digabung: kalau spasi ikut dibuang, nomor bisa menyatu dengan angka
+     * kolom sebelah (mis. "081364118400 03" -> "08136411840003") sehingga MaxChat
+     * menolaknya. Tiap token hanya diterima bila SELURUHNYA berupa nomor seluler
+     * yang sah: awalan 08/62/+62, digit kedua setelah 8 adalah 1-9 (mengecualikan
+     * NIK dan awalan tak sah seperti 080), dengan panjang wajar. Formatnya sendiri
+     * (tanda hubung/titik/kurung) tetap ditoleransi karena dibuang per token.
      */
     protected function phoneFrom(string $text): ?string
     {
-        foreach (preg_split('/\R/', $text) ?: [$text] as $line) {
-            $clean = preg_replace('/[\s().\-]/', '', $line);
+        foreach (preg_split('/\s+/', trim($text)) ?: [] as $token) {
+            $clean = preg_replace('/[().\-]/', '', $token);
 
-            if (is_string($clean) && preg_match('/(?:\+?62|0)8\d{7,12}/', $clean, $m) === 1) {
-                return $m[0];
+            if (is_string($clean) && preg_match('/^(?:\+?62|0)8[1-9]\d{7,10}$/', $clean) === 1) {
+                return $clean;
             }
         }
 
