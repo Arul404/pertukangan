@@ -14,6 +14,11 @@ $verified = (bool) $draft['phoneVerified'];
         <i class="bi bi-person-check-fill me-1"></i> Akun ditemukan
     </div>
     <div class="card-body">
+        <?php if (! empty($draft['resolved_from'])): ?>
+            <div class="alert alert-info py-2 px-3 small mb-3">
+                <i class="bi bi-signpost-2 me-1"></i> Ditemukan via <?= esc($draft['resolved_from']) ?>
+            </div>
+        <?php endif; ?>
         <dl class="row mb-0 small">
             <dt class="col-4 text-muted fw-normal">Nama</dt>
             <dd class="col-8"><?= esc($draft['name']) ?></dd>

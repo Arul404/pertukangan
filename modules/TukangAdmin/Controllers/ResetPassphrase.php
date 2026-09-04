@@ -9,8 +9,11 @@ use Modules\TukangAdmin\Config\Bsre as BsreConfig;
 use Modules\TukangAdmin\Config\Module;
 use Modules\TukangAdmin\Libraries\BsreClient;
 use Modules\TukangAdmin\Libraries\BsreClientException;
+use Modules\TukangAdmin\Libraries\TteScraper;
+use Modules\TukangAdmin\Libraries\TteScraperException;
 use Modules\TukangAdmin\Models\BsreCredentialModel;
 use Modules\TukangAdmin\Models\ResetDraftModel;
+use Modules\TukangAdmin\Models\TteCredentialModel;
 use Throwable;
 
 /**
@@ -70,13 +73,14 @@ class ResetPassphrase extends BaseController
             return $this->panel('error', null, ['Belum terhubung ke BSrE. Login dulu di menu Akun BSrE.']);
         }
 
-        // Parameter pencarian: email (default) atau nik. Meniru "Cari data
-        // berdasarkan" di portal, untuk mitigasi bila operator lupa email.
+        // Parameter pencarian: email (default), nik, atau nohp. Untuk nohp,
+        // nomor dipakai mencari email di TTE lebih dulu, baru email itu dipakai
+        // mencari di BSrE (mitigasi bila operator hanya tahu nomor HP).
         $searchParams = config(BsreConfig::class)->searchParams;
         $by           = strtolower(trim((string) $this->request->getPost('by'))) ?: 'email';
         $value        = trim((string) $this->request->getPost('value'));
 
-        if (! array_key_exists($by, $searchParams)) {
+        if (! in_array($by, ['email', 'nik', 'nohp'], true)) {
             return $this->panel('error', null, ['Parameter pencarian tidak dikenal.']);
         }
 
@@ -92,11 +96,35 @@ class ResetPassphrase extends BaseController
             return $this->panel('error', null, ['NIK harus berupa angka (6–20 digit).']);
         }
 
+        if ($by === 'nohp' && preg_match('/^[\d\s+\-().]{7,20}$/', $value) !== 1) {
+            return $this->panel('error', null, ['Nomor HP tidak valid.']);
+        }
+
+        // Resolusi ke pencarian BSrE (nilai + key filter). Untuk nohp, ambil
+        // email dari TTE dulu.
+        $resolvedFrom = null;
+
+        if ($by === 'nohp') {
+            $resolved = $this->emailFromPhone($value);
+
+            if (isset($resolved['error'])) {
+                return $this->panel('error', null, [$resolved['error']]);
+            }
+
+            $bsreValue     = $resolved['email'];
+            $bsreFilterKey = $searchParams['email'];
+            $resolvedFrom  = 'No HP ' . $value . ' → ' . $resolved['email']
+                . ($resolved['name'] !== '' ? ' (' . $resolved['name'] . ')' : '');
+        } else {
+            $bsreValue     = $value;
+            $bsreFilterKey = $searchParams[$by];
+        }
+
         $credential = $this->credentials->current();
 
         try {
             $client = (new BsreClient(null, $credential['base_url'] ?? null))->withToken($token);
-            $user   = $client->findUser($value, $searchParams[$by]);
+            $user   = $client->findUser($bsreValue, $bsreFilterKey);
         } catch (BsreClientException $e) {
             return $this->panel('error', null, [$e->getMessage()]);
         } catch (Throwable $e) {
@@ -118,6 +146,7 @@ class ResetPassphrase extends BaseController
             'phoneVerified' => $user['phoneVerified'],
             'serial'        => $target['serial'],
             'jenis'         => $target['jenis'],
+            'resolved_from' => $resolvedFrom,
         ];
 
         // Draft disimpan di DB; id-nya ditanam di panel dan dipakai saat dispatch,
@@ -191,6 +220,38 @@ class ResetPassphrase extends BaseController
                 'message' => $message,
             ],
         ]));
+    }
+
+    /**
+     * Cari email pengguna di TTE berdasarkan nomor HP (scraping, memakai
+     * kredensial Akun TTE). Dipakai saat parameter pencarian = No HP.
+     *
+     * @return array{email: string, name: string}|array{error: string}
+     */
+    protected function emailFromPhone(string $phone): array
+    {
+        $tte = new TteCredentialModel();
+        $cred = $tte->current();
+
+        if ($cred === null) {
+            return ['error' => 'Cari via No HP butuh kredensial TTE. Isi dulu di Tukang Admin → Akun TTE.'];
+        }
+
+        try {
+            $scraper = new TteScraper(null, $cred['base_url'] ?? null);
+            $scraper->login($cred['username'], $tte->plainPassword($cred));
+            $found = $scraper->findPenandatangan($phone);
+        } catch (TteScraperException $e) {
+            return ['error' => 'Pencarian email di TTE gagal: ' . $e->getMessage()];
+        } catch (Throwable $e) {
+            return ['error' => 'Kesalahan tak terduga saat menghubungi TTE: ' . $e->getMessage()];
+        }
+
+        if (empty($found['email'])) {
+            return ['error' => 'Email tidak ditemukan di TTE untuk nomor "' . $phone . '".'];
+        }
+
+        return ['email' => $found['email'], 'name' => (string) ($found['name'] ?? '')];
     }
 
     /**

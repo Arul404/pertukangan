@@ -50,6 +50,7 @@
                     <select class="form-select" id="by" name="by" <?= $ready ? '' : 'disabled' ?>>
                         <option value="email" selected>Email</option>
                         <option value="nik">NIK</option>
+                        <option value="nohp">No HP</option>
                     </select>
                 </div>
 
@@ -162,6 +163,12 @@
                 placeholder: '16 digit NIK',
                 inputmode: 'numeric',
                 help: 'NIK dipakai untuk mencari akun bila email lupa (parameter NIK).',
+            },
+            nohp: {
+                label: 'No HP',
+                placeholder: '08123456789',
+                inputmode: 'tel',
+                help: 'Nomor dipakai mencari email di TTE dulu, lalu email itu dipakai mencari akun di BSrE.',
             },
         };
 
