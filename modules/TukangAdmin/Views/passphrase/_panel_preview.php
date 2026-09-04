@@ -73,7 +73,7 @@ $verified = (bool) $draft['phoneVerified'];
 <?php endif; ?>
 
 <div class="d-grid mb-3">
-    <button type="button" id="btn-dispatch"
+    <button type="button" id="btn-dispatch" data-draft-id="<?= esc($draftId ?? '', 'attr') ?>"
             class="btn btn-lg <?= $verified ? 'btn-danger' : 'btn-warning' ?>"
             data-confirm-title="<?= $verified ? 'Kirim tautan reset passphrase?' : 'Kirim tautan verifikasi HP?' ?>"
             data-confirm="<?= $verified

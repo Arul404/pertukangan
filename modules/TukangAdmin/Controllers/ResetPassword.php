@@ -8,6 +8,7 @@ use CodeIgniter\HTTP\ResponseInterface;
 use Modules\TukangAdmin\Config\Module;
 use Modules\TukangAdmin\Libraries\TteScraper;
 use Modules\TukangAdmin\Libraries\TteScraperException;
+use Modules\TukangAdmin\Models\ResetDraftModel;
 use Modules\TukangAdmin\Models\TteCredentialModel;
 use Modules\TukangKirim\Libraries\MaxChatDispatcher;
 use Modules\TukangKirim\Libraries\MaxChatService;
@@ -22,26 +23,29 @@ use Throwable;
  * Reset kata sandi TTE dalam satu halaman, dua langkah POST lewat fetch().
  *
  * Langkah 1 (search): scraper login ke TTE, mencari akun penandatangan lewat
- * nomor HP, mengambil emailnya, dan membangkitkan kata sandi acak. Semuanya
- * disimpan sebagai draft di session dan ditampilkan untuk dikonfirmasi — kata
- * sandi TTE BELUM diubah pada tahap ini.
+ * email/NIK/nomor HP, mengambil email + nomornya, dan membangkitkan kata sandi
+ * acak. Semuanya disimpan sebagai draft ber-id acak di DB dan ditampilkan untuk
+ * dikonfirmasi — kata sandi TTE BELUM diubah pada tahap ini.
  *
- * Langkah 2 (dispatch): baru di sini kata sandi TTE benar-benar diganti, lalu
- * kata sandi + email dikirim ke nomor HP memakai pipeline kirim milik Tukang
- * Kirim (template + MaxChatDispatcher + MessageLogModel), lengkap dengan
- * penyamaran kata sandi di riwayat persis seperti Send::dispatch.
+ * Langkah 2 (dispatch): dengan id draft yang ditampilkan tab tersebut, baru di
+ * sini kata sandi TTE benar-benar diganti, lalu kata sandi + email dikirim ke
+ * nomor HP memakai pipeline kirim milik Tukang Kirim (template +
+ * MaxChatDispatcher + MessageLogModel), lengkap dengan penyamaran kata sandi di
+ * riwayat persis seperti Send::dispatch.
  *
- * Kata sandi yang dibangkitkan hidup hanya di session sampai langkah 2 selesai.
+ * Draft disimpan di DB (bukan session) dan bersifat sekali-pakai, jadi dua tab
+ * pada browser yang sama tidak saling menimpa dan bisa berjalan berdampingan.
  */
 class ResetPassword extends BaseController
 {
-    protected const DRAFT_KEY = 'tukang_admin_reset_draft';
+    protected const DRAFT_KIND = 'tte';
 
     protected TemplateModel $templates;
     protected TteCredentialModel $credentials;
     protected PlaceholderParser $parser;
     protected MaxChatService $maxchat;
     protected MaxChatDispatcher $dispatcher;
+    protected ResetDraftModel $drafts;
 
     public function __construct()
     {
@@ -50,6 +54,7 @@ class ResetPassword extends BaseController
         $this->parser      = new PlaceholderParser();
         $this->maxchat     = new MaxChatService();
         $this->dispatcher  = new MaxChatDispatcher();
+        $this->drafts      = new ResetDraftModel();
     }
 
     public function index(): string
@@ -180,10 +185,13 @@ class ResetPassword extends BaseController
             'text'             => $text,
         ];
 
-        session()->set(self::DRAFT_KEY, $draft);
+        // Draft disimpan di DB dan id-nya ditanam di panel; dispatch nanti hanya
+        // memproses draft dengan id ini, jadi tab lain tak bisa menimpanya.
+        $draftId = $this->drafts->create(self::DRAFT_KIND, $draft);
 
         return $this->panel('preview', view(Module::VIEWS . 'reset/_panel_preview', [
             'draft'       => $draft,
+            'draftId'     => $draftId,
             'maxchat'     => $this->maxchat,
             'nextAccount' => $this->dispatcher->peek(),
         ]));
@@ -198,12 +206,14 @@ class ResetPassword extends BaseController
             return redirect()->to(module_url());
         }
 
-        $draft = session(self::DRAFT_KEY);
+        // Klaim draft berdasarkan id dari tab ini: atomik & sekali-pakai, jadi
+        // klik ganda maupun tab lain tidak bisa memproses draft yang sama.
+        $draft = $this->drafts->claim(self::DRAFT_KIND, (string) $this->request->getPost('draft_id'));
 
-        // Draft sekali pakai: begitu diproses ia dibuang, jadi klik ganda atau
-        // session kedaluwarsa tidak bisa memicu reset kedua.
-        if (! is_array($draft) || empty($draft['change_url']) || empty($draft['password'])) {
-            return $this->panel('error', null, ['Draft sudah tidak ada. Silakan ulangi pencarian nomor.']);
+        if ($draft === null || empty($draft['change_url']) || empty($draft['password'])) {
+            return $this->panel('error', null, [
+                'Draft sudah tidak berlaku (kedaluwarsa, sudah diproses, atau digantikan pencarian lain). Silakan ulangi pencarian.',
+            ]);
         }
 
         $credential = $this->credentials->current();
@@ -218,12 +228,8 @@ class ResetPassword extends BaseController
             $scraper->login($credential['username'], $this->credentials->plainPassword($credential));
             $scraper->changePassword(['change_url' => $draft['change_url']], $draft['password']);
         } catch (TteScraperException $e) {
-            session()->remove(self::DRAFT_KEY);
-
             return $this->panel('error', null, ['Reset gagal: ' . $e->getMessage()]);
         } catch (Throwable $e) {
-            session()->remove(self::DRAFT_KEY);
-
             return $this->panel('error', null, ['Kesalahan tak terduga saat mengubah kata sandi: ' . $e->getMessage()]);
         }
 
@@ -243,8 +249,6 @@ class ResetPassword extends BaseController
                 ];
             }
         }
-
-        session()->remove(self::DRAFT_KEY);
 
         return $this->panel('result', view(Module::VIEWS . 'reset/_panel_result', [
             'result' => [

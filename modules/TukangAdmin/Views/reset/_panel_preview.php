@@ -76,7 +76,7 @@
 </div>
 
 <div class="d-grid mb-3">
-    <button type="button" id="btn-dispatch"
+    <button type="button" id="btn-dispatch" data-draft-id="<?= esc($draftId ?? '', 'attr') ?>"
             class="btn btn-lg <?= $maxchat->isDryRun() ? 'btn-warning' : 'btn-danger' ?>"
             data-confirm-title="Reset kata sandi sekarang?"
             data-confirm="<?= $maxchat->isDryRun()

@@ -310,6 +310,7 @@
 
             const body = new FormData();
             body.append(CSRF_NAME, form.querySelector('input[name="' + CSRF_NAME + '"]').value);
+            body.append('draft_id', doBtn.dataset.draftId || '');
 
             try {
                 const data = await postJson(DISPATCH_URL, body);

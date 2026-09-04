@@ -10,6 +10,7 @@ use Modules\TukangAdmin\Config\Module;
 use Modules\TukangAdmin\Libraries\BsreClient;
 use Modules\TukangAdmin\Libraries\BsreClientException;
 use Modules\TukangAdmin\Models\BsreCredentialModel;
+use Modules\TukangAdmin\Models\ResetDraftModel;
 use Throwable;
 
 /**
@@ -28,16 +29,21 @@ use Throwable;
  *
  * Login + OTP tidak dilakukan di sini; token diperoleh sekali lewat menu Akun
  * BSrE dan dipakai ulang selama masih berlaku.
+ *
+ * Draft konfirmasi disimpan di DB (bukan session) dan sekali-pakai, sehingga dua
+ * tab pada browser yang sama tidak saling menimpa dan bisa berjalan berdampingan.
  */
 class ResetPassphrase extends BaseController
 {
-    protected const DRAFT_KEY = 'tukang_admin_passphrase_draft';
+    protected const DRAFT_KIND = 'passphrase';
 
     protected BsreCredentialModel $credentials;
+    protected ResetDraftModel $drafts;
 
     public function __construct()
     {
         $this->credentials = new BsreCredentialModel();
+        $this->drafts      = new ResetDraftModel();
     }
 
     public function index(): string
@@ -114,10 +120,13 @@ class ResetPassphrase extends BaseController
             'jenis'         => $target['jenis'],
         ];
 
-        session()->set(self::DRAFT_KEY, $draft);
+        // Draft disimpan di DB; id-nya ditanam di panel dan dipakai saat dispatch,
+        // jadi tab lain tak bisa menimpa draft yang tab ini tampilkan.
+        $draftId = $this->drafts->create(self::DRAFT_KIND, $draft);
 
         return $this->panel('preview', view(Module::VIEWS . 'passphrase/_panel_preview', [
             'draft'        => $draft,
+            'draftId'      => $draftId,
             'certificates' => $user['certificates'],
         ]));
     }
@@ -137,12 +146,13 @@ class ResetPassphrase extends BaseController
             return $this->panel('error', null, ['Sesi BSrE berakhir. Login ulang di menu Akun BSrE.']);
         }
 
-        $draft = session(self::DRAFT_KEY);
+        // Klaim draft berdasarkan id dari tab ini: atomik & sekali-pakai.
+        $draft = $this->drafts->claim(self::DRAFT_KIND, (string) $this->request->getPost('draft_id'));
 
-        // Draft sekali pakai: begitu diproses ia dibuang, jadi klik ganda atau
-        // session kedaluwarsa tidak bisa memicu aksi kedua.
-        if (! is_array($draft) || empty($draft['uid']) || empty($draft['serial'])) {
-            return $this->panel('error', null, ['Draft sudah tidak ada. Silakan ulangi pencarian email.']);
+        if ($draft === null || empty($draft['uid']) || empty($draft['serial'])) {
+            return $this->panel('error', null, [
+                'Draft sudah tidak berlaku (kedaluwarsa, sudah diproses, atau digantikan pencarian lain). Silakan ulangi pencarian.',
+            ]);
         }
 
         $credential = $this->credentials->current();
@@ -153,8 +163,6 @@ class ResetPassphrase extends BaseController
             if (! $draft['phoneVerified']) {
                 // Outcome 1: HP belum terverifikasi -> kirim tautan verifikasi WA.
                 if (empty($draft['phone'])) {
-                    session()->remove(self::DRAFT_KEY);
-
                     return $this->panel('error', null, [
                         'Nomor HP pengguna tidak terbaca, sehingga verifikasi tidak bisa dipicu.',
                     ]);
@@ -168,16 +176,10 @@ class ResetPassphrase extends BaseController
                 $outcome = 'reset';
             }
         } catch (BsreClientException $e) {
-            session()->remove(self::DRAFT_KEY);
-
             return $this->panel('error', null, ['Gagal: ' . $e->getMessage()]);
         } catch (Throwable $e) {
-            session()->remove(self::DRAFT_KEY);
-
             return $this->panel('error', null, ['Kesalahan tak terduga: ' . $e->getMessage()]);
         }
-
-        session()->remove(self::DRAFT_KEY);
 
         return $this->panel('result', view(Module::VIEWS . 'passphrase/_panel_result', [
             'result' => [
