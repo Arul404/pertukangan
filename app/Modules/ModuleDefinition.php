@@ -33,12 +33,14 @@ abstract class ModuleDefinition
     /**
      * Menu internal modul, tampil bersarang di bawah nama modul pada sidebar.
      *
-     * Tiap item: ['label' => string, 'icon' => string, 'path' => string].
-     * `path` relatif terhadap slug modul; string kosong berarti halaman utama
-     * modul. Nilai inilah yang dibandingkan dengan segmen URI kedua untuk
-     * menentukan item mana yang sedang aktif.
+     * Tiap entri boleh salah satu dari:
+     *  - Item biasa: ['label' => string, 'icon' => string, 'path' => string].
+     *    `path` relatif terhadap slug modul; string kosong = halaman utama.
+     *    Nilai ini dibandingkan dengan segmen URI kedua untuk menandai aktif.
+     *  - Sub-kelompok: ['label' => string, 'items' => list<item biasa>], untuk
+     *    mengelompokkan menu (mis. 'TTE', 'BSrE'). `label` jadi judul kelompok.
      *
-     * @return list<array{label: string, icon: string, path: string}>
+     * @return list<array<string, mixed>>
      */
     abstract public function menu(): array;
 }

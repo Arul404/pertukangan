@@ -101,6 +101,14 @@ $dryRun = $activeModule !== null && $activeModule->slug() === 'tukang-kirim' && 
         }
         .sidebar-submenu .nav-link { font-size: .875rem; padding: .35rem .6rem; }
         .sidebar-submenu .nav-link.active { background: #262b31; color: #fff; }
+        /* Judul sub-kelompok di dalam submenu (mis. "TTE", "BSrE"). */
+        .sidebar-subheading {
+            list-style: none;
+            text-transform: uppercase; font-size: .65rem; font-weight: 700;
+            letter-spacing: .06em; color: #6c757d;
+            padding: .5rem .6rem .15rem;
+        }
+        .sidebar-subheading:first-child { padding-top: .1rem; }
 
         /* Sidebar tetap terlihat saat konten digulir, hanya pada layar lebar. */
         @media (min-width: 992px) {

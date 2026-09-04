@@ -50,11 +50,17 @@ class Module extends ModuleDefinition
 
     public function menu(): array
     {
+        // Dikelompokkan per layanan agar menu terstruktur. Sidebar mendukung
+        // entri bergrup (punya 'items') maupun item biasa (punya 'path').
         return [
-            ['label' => 'Reset Password',    'icon' => 'bi-key',          'path' => ''],
-            ['label' => 'Akun TTE',          'icon' => 'bi-person-gear',  'path' => 'akun'],
-            ['label' => 'Reset Passphrase',  'icon' => 'bi-key-fill',     'path' => 'passphrase'],
-            ['label' => 'Akun BSrE',         'icon' => 'bi-shield-lock',  'path' => 'akun-bsre'],
+            ['label' => 'TTE', 'items' => [
+                ['label' => 'Reset Password', 'icon' => 'bi-key',         'path' => ''],
+                ['label' => 'Akun TTE',       'icon' => 'bi-person-gear', 'path' => 'akun'],
+            ]],
+            ['label' => 'BSrE', 'items' => [
+                ['label' => 'Reset Passphrase', 'icon' => 'bi-key-fill',    'path' => 'passphrase'],
+                ['label' => 'Akun BSrE',        'icon' => 'bi-shield-lock', 'path' => 'akun-bsre'],
+            ]],
         ];
     }
 }
