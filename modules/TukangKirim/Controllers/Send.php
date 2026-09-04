@@ -10,6 +10,7 @@ use Modules\TukangKirim\Libraries\MaxChatDispatcher;
 use Modules\TukangKirim\Libraries\MaxChatService;
 use Modules\TukangKirim\Libraries\PasswordGenerator;
 use Modules\TukangKirim\Libraries\PlaceholderParser;
+use Modules\TukangKirim\Libraries\SendQueueService;
 use Modules\TukangKirim\Models\MaxchatAccountModel;
 use Modules\TukangKirim\Models\MessageLogModel;
 use Modules\TukangKirim\Models\TemplateModel;
@@ -33,15 +34,17 @@ class Send extends BaseController
     protected PlaceholderParser $parser;
     protected MaxChatService $maxchat;
     protected MaxChatDispatcher $dispatcher;
+    protected SendQueueService $queue;
 
     public function __construct()
     {
         $this->templates = new TemplateModel();
         $this->parser    = new PlaceholderParser();
         // Service dipakai langsung hanya untuk hal yang tidak bergantung akun
-        // (normalisasi nomor, mode uji coba); pengiriman lewat dispatcher.
+        // (normalisasi nomor, mode uji coba); pengiriman lewat dispatcher/antrean.
         $this->maxchat    = new MaxChatService();
         $this->dispatcher = new MaxChatDispatcher();
+        $this->queue      = new SendQueueService();
     }
 
     /**
@@ -162,83 +165,77 @@ class Send extends BaseController
             return $this->panel('error', null, ['Draft pesan sudah tidak ada. Silakan susun ulang pesannya.']);
         }
 
-        $outcome = $this->dispatcher->send($draft['recipient_normalized'], $draft['text']);
-        $result  = $outcome['final'];
-
-        // Password disamarkan sebelum apa pun ditulis ke database — termasuk di
-        // dalam payload/respons API, yang pada mode uji coba memuat teks pesan.
         $password = $draft['password'] ?? null;
         $mask     = static fn (?string $text): ?string => $password !== null && $text !== null
             ? str_replace($password, str_repeat('*', 8), $text)
             : $text;
-
         $masked = (string) $mask($draft['text']);
-        $logs   = new MessageLogModel();
 
-        $row = static fn (array $attemptResult, ?array $account, int $no): array => [
+        // Template terakhir dipertahankan sebagai default untuk kiriman berikutnya;
+        // nomor & isian placeholder dikosongkan karena berbeda tiap penerima.
+        session()->set(self::INPUT_KEY, [
+            'template_id'  => $draft['template_id'],
+            'to'           => '',
+            'placeholders' => [],
+        ]);
+        session()->remove(self::DRAFT_KEY);
+
+        // Mode uji coba tetap sinkron (tidak benar-benar mengirim); pengiriman
+        // nyata dimasukkan ANTREAN dan dikirim worker dengan jeda (anti-banned).
+        if ($this->maxchat->isDryRun()) {
+            $outcome = $this->dispatcher->send($draft['recipient_normalized'], $draft['text']);
+            $result  = $outcome['final'];
+            $logs    = new MessageLogModel();
+
+            $row = static fn (array $res, ?array $account, int $no): array => [
+                'template_id'          => $draft['template_id'],
+                'maxchat_account_id'   => $account !== null ? (int) $account['id'] : null,
+                'template_name'        => $draft['template_name'],
+                'account_name'         => $account['name'] ?? null,
+                'recipient_input'      => $draft['recipient_input'],
+                'recipient_normalized' => $draft['recipient_normalized'],
+                'message_masked'       => $masked,
+                'has_password'         => $password !== null ? 1 : 0,
+                'status'               => $res['status'],
+                'http_code'            => $res['http_code'],
+                'api_response'         => $mask($res['body']),
+                'error_message'        => $res['error'],
+                'attempt_no'           => $no,
+            ];
+
+            $logs->insert($row($result, $outcome['account'], 1));
+
+            return $this->panel('result', view(Module::VIEWS . 'send/_panel_result', [
+                'result' => [
+                    'status'    => $result['status'],
+                    'ok'        => $result['ok'],
+                    'http_code' => $result['http_code'],
+                    'body'      => $result['body'],
+                    'error'     => $result['error'],
+                    'recipient' => $draft['recipient_normalized'],
+                    'text'      => $draft['text'],
+                    'password'  => $password,
+                    'account'   => $outcome['ok'] ? ($outcome['account']['name'] ?? null) : null,
+                    'failed'    => [],
+                ],
+            ]));
+        }
+
+        $this->queue->enqueue($draft['recipient_normalized'], $draft['text'], $password, [
             'template_id'          => $draft['template_id'],
-            'maxchat_account_id'   => $account !== null ? (int) $account['id'] : null,
             'template_name'        => $draft['template_name'],
-            'account_name'         => $account['name'] ?? null,
             'recipient_input'      => $draft['recipient_input'],
             'recipient_normalized' => $draft['recipient_normalized'],
             'message_masked'       => $masked,
             'has_password'         => $password !== null ? 1 : 0,
-            'status'               => $attemptResult['status'],
-            'http_code'            => $attemptResult['http_code'],
-            'api_response'         => $mask($attemptResult['body']),
-            'error_message'        => $attemptResult['error'],
-            'attempt_no'           => $no,
-        ];
+        ]);
 
-        if ($outcome['attempts'] === []) {
-            // Tidak ada akun aktif sama sekali: kegagalan tetap harus terekam.
-            $logs->insert($row($result, null, 1));
-        } else {
-            foreach ($outcome['attempts'] as $index => $attempt) {
-                $logs->insert($row($attempt['result'], $attempt['account'], $index + 1));
-            }
-        }
-
-        // Percobaan yang gagal sebelum akhirnya berhasil: ditampilkan di halaman
-        // hasil sebagai peringatan, sekaligus petunjuk akun mana yang perlu dicek.
-        $failed = [];
-
-        foreach ($outcome['attempts'] as $attempt) {
-            if (! $attempt['result']['ok']) {
-                $failed[] = [
-                    'account' => $attempt['account']['name'],
-                    'error'   => $attempt['result']['error'] ?? 'Penyebab tidak diketahui.',
-                ];
-            }
-        }
-
-        session()->remove(self::DRAFT_KEY);
-
-        if ($result['ok']) {
-            // Template terakhir dipertahankan sebagai default untuk kiriman
-            // berikutnya; nomor tujuan dan isian placeholder dikosongkan karena selalu
-            // berbeda tiap penerima.
-            session()->set(self::INPUT_KEY, [
-                'template_id'  => $draft['template_id'],
-                'to'           => '',
-                'placeholders' => [],
-            ]);
-        }
-
-        // Password ikut sekali ke panel hasil, lalu hilang bersama panelnya.
-        return $this->panel('result', view(Module::VIEWS . 'send/_panel_result', [
+        return $this->panel('result', view(Module::VIEWS . 'send/_panel_queued', [
             'result' => [
-                'status'    => $result['status'],
-                'ok'        => $result['ok'],
-                'http_code' => $result['http_code'],
-                'body'      => $result['body'],
-                'error'     => $result['error'],
                 'recipient' => $draft['recipient_normalized'],
                 'text'      => $draft['text'],
                 'password'  => $password,
-                'account'   => $outcome['ok'] ? ($outcome['account']['name'] ?? null) : null,
-                'failed'    => $failed,
+                'pending'   => $this->queue->pending(),
             ],
         ]));
     }

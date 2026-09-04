@@ -45,4 +45,25 @@ class MaxChat extends BaseConfig
      * Kode negara default untuk normalisasi nomor lokal (08xx -> 628xx).
      */
     public string $countryCode = '62';
+
+    // ---------------------------------------------------------------------
+    // Antrean kirim (anti-banned)
+    // ---------------------------------------------------------------------
+
+    /**
+     * Jeda MINIMUM antar pengiriman nyata oleh worker antrean (detik). Mencegah
+     * pesan meluncur berbarengan/beruntun yang berisiko diblokir WhatsApp.
+     */
+    public int $sendMinInterval = 12;
+
+    /**
+     * Tambahan jeda acak 0..N detik pada tiap kirim (jitter) supaya pola tidak
+     * kaku seperti bot. Jeda efektif = sendMinInterval + rand(0, sendJitter).
+     */
+    public int $sendJitter = 8;
+
+    /**
+     * Jeda worker saat antrean kosong sebelum mengecek lagi (detik).
+     */
+    public int $queueIdleSleep = 5;
 }

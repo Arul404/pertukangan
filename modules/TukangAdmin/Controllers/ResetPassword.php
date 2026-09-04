@@ -14,6 +14,7 @@ use Modules\TukangKirim\Libraries\MaxChatDispatcher;
 use Modules\TukangKirim\Libraries\MaxChatService;
 use Modules\TukangKirim\Libraries\PasswordGenerator;
 use Modules\TukangKirim\Libraries\PlaceholderParser;
+use Modules\TukangKirim\Libraries\SendQueueService;
 use Modules\TukangKirim\Models\MaxchatAccountModel;
 use Modules\TukangKirim\Models\MessageLogModel;
 use Modules\TukangKirim\Models\TemplateModel;
@@ -46,6 +47,7 @@ class ResetPassword extends BaseController
     protected MaxChatService $maxchat;
     protected MaxChatDispatcher $dispatcher;
     protected ResetDraftModel $drafts;
+    protected SendQueueService $queue;
 
     public function __construct()
     {
@@ -55,6 +57,7 @@ class ResetPassword extends BaseController
         $this->maxchat     = new MaxChatService();
         $this->dispatcher  = new MaxChatDispatcher();
         $this->drafts      = new ResetDraftModel();
+        $this->queue       = new SendQueueService();
     }
 
     public function index(): string
@@ -246,38 +249,55 @@ class ResetPassword extends BaseController
             return $this->panel('error', null, ['Kesalahan tak terduga saat mengubah kata sandi: ' . $e->getMessage()]);
         }
 
-        // Kata sandi berhasil diubah — kirim ke nomor HP lewat pipeline Tukang Kirim.
-        $outcome = $this->dispatcher->send($draft['phone_normalized'], $draft['text']);
-        $result  = $outcome['final'];
+        // Kata sandi TTE sudah berubah. Mode uji coba tetap sinkron (tidak benar-
+        // benar mengirim) supaya operator langsung lihat sandinya untuk disampaikan
+        // manual; pengiriman nyata dimasukkan ANTREAN dan dikirim worker dengan
+        // jeda antar-kirim (anti-banned).
+        if ($this->maxchat->isDryRun()) {
+            $outcome = $this->dispatcher->send($draft['phone_normalized'], $draft['text']);
+            $result  = $outcome['final'];
 
-        $this->recordLogs($draft, $outcome);
+            $this->recordLogs($draft, $outcome);
 
-        $failed = [];
-
-        foreach ($outcome['attempts'] as $attempt) {
-            if (! $attempt['result']['ok']) {
-                $failed[] = [
-                    'account' => $attempt['account']['name'],
-                    'error'   => $attempt['result']['error'] ?? 'Penyebab tidak diketahui.',
-                ];
-            }
+            return $this->panel('result', view(Module::VIEWS . 'reset/_panel_result', [
+                'result' => [
+                    'email'     => $draft['email'],
+                    'name'      => $draft['name'],
+                    'role'      => $draft['role'],
+                    'password'  => $draft['password'],
+                    'recipient' => $draft['phone_normalized'],
+                    'text'      => $draft['text'],
+                    'status'    => $result['status'],
+                    'ok'        => $result['ok'],
+                    'http_code' => $result['http_code'],
+                    'body'      => $result['body'],
+                    'error'     => $result['error'],
+                    'account'   => $outcome['ok'] ? ($outcome['account']['name'] ?? null) : null,
+                    'failed'    => [],
+                ],
+            ]));
         }
 
-        return $this->panel('result', view(Module::VIEWS . 'reset/_panel_result', [
+        $masked = str_replace($draft['password'], str_repeat('*', 8), $draft['text']);
+
+        $this->queue->enqueue($draft['phone_normalized'], $draft['text'], $draft['password'], [
+            'template_id'          => $draft['template_id'],
+            'template_name'        => $draft['template_name'],
+            'recipient_input'      => $draft['phone_input'],
+            'recipient_normalized' => $draft['phone_normalized'],
+            'message_masked'       => $masked,
+            'has_password'         => 1,
+        ]);
+
+        return $this->panel('result', view(Module::VIEWS . 'reset/_panel_queued', [
             'result' => [
-                'email'      => $draft['email'],
-                'name'       => $draft['name'],
-                'role'       => $draft['role'],
-                'password'   => $draft['password'],
-                'recipient'  => $draft['phone_normalized'],
-                'text'       => $draft['text'],
-                'status'     => $result['status'],
-                'ok'         => $result['ok'],
-                'http_code'  => $result['http_code'],
-                'body'       => $result['body'],
-                'error'      => $result['error'],
-                'account'    => $outcome['ok'] ? ($outcome['account']['name'] ?? null) : null,
-                'failed'     => $failed,
+                'email'     => $draft['email'],
+                'name'      => $draft['name'],
+                'role'      => $draft['role'],
+                'password'  => $draft['password'],
+                'recipient' => $draft['phone_normalized'],
+                'text'      => $draft['text'],
+                'pending'   => $this->queue->pending(),
             ],
         ]));
     }
