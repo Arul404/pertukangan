@@ -7,6 +7,7 @@ use CodeIgniter\CLI\CLI;
 use Config\Database;
 use Modules\TukangKirim\Config\MaxChat as MaxChatConfig;
 use Modules\TukangKirim\Libraries\SendQueueService;
+use Modules\TukangKirim\Models\WorkerSettingsModel;
 use Throwable;
 
 /**
@@ -49,14 +50,35 @@ class SendWorker extends BaseCommand
             return EXIT_ERROR;
         }
 
-        $service = new SendQueueService();
+        $service  = new SendQueueService();
+        $settings = new WorkerSettingsModel();
 
         CLI::write(($once ? 'Menguras antrean (--once)' : 'Worker antrean berjalan')
-            . '. Jeda antar-kirim ' . $config->sendMinInterval . '–'
-            . ($config->sendMinInterval + $config->sendJitter) . ' detik. Ctrl+C untuk berhenti.', 'green');
+            . '. Setelan jeda & jeda/lanjut dibaca dari halaman Worker. Ctrl+C untuk berhenti.', 'green');
 
         try {
             while (true) {
+                $settings->heartbeat();
+                $control = $settings->current();
+
+                // Permintaan berhenti dari halaman Worker: keluar dengan rapi.
+                if ((int) $control['stop_requested'] === 1) {
+                    $settings->save1(['stop_requested' => 0]);
+                    CLI::write('Permintaan berhenti diterima. Keluar.', 'yellow');
+                    break;
+                }
+
+                // Dijeda: jangan kirim, tetap standby (kecuali mode --once → keluar).
+                if ((int) $control['paused'] === 1) {
+                    if ($once) {
+                        CLI::write('Worker sedang dijeda. Selesai.', 'yellow');
+                        break;
+                    }
+
+                    sleep(max(1, $config->queueIdleSleep));
+                    continue;
+                }
+
                 $summary = $this->processSafely($service);
 
                 if ($summary === null) {
@@ -74,7 +96,7 @@ class SendWorker extends BaseCommand
 
                 // Pacing: beri jarak sebelum pesan berikutnya (kecuali dryrun).
                 if ($summary['status'] !== 'dryrun') {
-                    $wait = $config->sendMinInterval + random_int(0, max(0, $config->sendJitter));
+                    $wait = $settings->effectiveMinInterval($config) + random_int(0, max(0, $settings->effectiveJitter($config)));
                     CLI::write('  jeda ' . $wait . ' detik…', 'dark_gray');
                     sleep($wait);
                 }

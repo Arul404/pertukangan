@@ -50,6 +50,7 @@ class Module extends ModuleDefinition
             ['label' => 'Kirim Pesan',  'icon' => 'bi-send',           'path' => ''],
             ['label' => 'Template',     'icon' => 'bi-file-earmark-text', 'path' => 'templates'],
             ['label' => 'Akun MaxChat', 'icon' => 'bi-person-badge',   'path' => 'accounts'],
+            ['label' => 'Worker',       'icon' => 'bi-gear-wide-connected', 'path' => 'worker'],
             ['label' => 'Riwayat',      'icon' => 'bi-clock-history',  'path' => 'logs'],
         ];
     }

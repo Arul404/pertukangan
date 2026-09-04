@@ -45,4 +45,14 @@ $routes->group(Module::SLUG, ['namespace' => 'Modules\TukangKirim\Controllers'],
     // --- Riwayat pengiriman ---
     $routes->get('logs', 'Logs::index');
     $routes->get('logs/(:num)', 'Logs::show/$1');
+
+    // --- Worker antrean kirim ---
+    $routes->group('worker', static function ($routes): void {
+        $routes->get('/', 'Worker::index');
+        $routes->get('status', 'Worker::status');
+        $routes->post('save', 'Worker::save');
+        $routes->post('stop', 'Worker::stop');
+        $routes->post('flush', 'Worker::flush');
+        $routes->post('(:num)/cancel', 'Worker::cancel/$1');
+    });
 });
