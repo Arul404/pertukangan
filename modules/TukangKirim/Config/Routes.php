@@ -51,6 +51,7 @@ $routes->group(Module::SLUG, ['namespace' => 'Modules\TukangKirim\Controllers'],
         $routes->get('/', 'Worker::index');
         $routes->get('status', 'Worker::status');
         $routes->post('save', 'Worker::save');
+        $routes->post('start', 'Worker::start');
         $routes->post('stop', 'Worker::stop');
         $routes->post('flush', 'Worker::flush');
         $routes->post('(:num)/cancel', 'Worker::cancel/$1');

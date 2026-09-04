@@ -140,15 +140,31 @@
 
         <div id="flush-status" class="small mt-2"></div>
 
-        <form method="post" action="<?= module_url('worker/stop') ?>" class="mt-2"
-              data-confirm-title="Hentikan worker?"
-              data-confirm="Worker daemon akan keluar dengan rapi setelah pesan yang sedang berjalan selesai. Jadwal --once tidak terpengaruh."
-              data-confirm-ok="Ya, Hentikan" data-confirm-variant="danger">
-            <?= csrf_field() ?>
-            <button class="btn btn-outline-danger btn-sm" type="submit">
-                <i class="bi bi-stop-circle me-1"></i> Hentikan worker (daemon)
-            </button>
-        </form>
+        <div class="card shadow-sm mt-3">
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-power me-1"></i> Nyala / mati worker</div>
+            <div class="card-body d-flex flex-wrap gap-2 align-items-center">
+                <form method="post" action="<?= module_url('worker/start') ?>" class="d-inline">
+                    <?= csrf_field() ?>
+                    <button class="btn btn-success btn-sm" type="submit" <?= $status['running'] ? 'disabled' : '' ?>>
+                        <i class="bi bi-play-fill me-1"></i> Nyalakan
+                    </button>
+                </form>
+
+                <form method="post" action="<?= module_url('worker/stop') ?>" class="d-inline"
+                      data-confirm-title="Matikan worker?"
+                      data-confirm="Worker daemon akan keluar dengan rapi setelah pesan yang sedang berjalan selesai."
+                      data-confirm-ok="Ya, Matikan" data-confirm-variant="danger">
+                    <?= csrf_field() ?>
+                    <button class="btn btn-outline-danger btn-sm" type="submit" <?= $status['running'] ? '' : 'disabled' ?>>
+                        <i class="bi bi-stop-fill me-1"></i> Matikan
+                    </button>
+                </form>
+
+                <span class="text-muted small ms-auto">
+                    Atau via script: <code>scripts\worker-start.bat</code> / <code>scripts\worker-stop.bat</code>
+                </span>
+            </div>
+        </div>
     </div>
 
     <!-- ===== Antrean ===== -->

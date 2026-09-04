@@ -69,6 +69,56 @@ class Worker extends BaseController
         return redirect()->to(module_url('worker'))->with('success', 'Setelan worker disimpan.');
     }
 
+    /**
+     * Nyalakan worker (best-effort): luncurkan daemon terpisah dari server web.
+     *
+     * Keandalannya bergantung lingkungan (server web menemukan php, boleh
+     * meluncurkan proses). Bila gagal menyala, pakai scripts\worker-start.bat.
+     */
+    public function start(): RedirectResponse
+    {
+        if ($this->isRunning()) {
+            return redirect()->to(module_url('worker'))->with('success', 'Worker sudah aktif.');
+        }
+
+        // Bersihkan sisa flag berhenti agar daemon baru tidak langsung keluar.
+        $this->settings->save1(['stop_requested' => 0]);
+
+        $config = config(MaxChatConfig::class);
+        $php    = $config->phpBinary !== '' ? $config->phpBinary : 'php';
+        $spark  = ROOTPATH . 'spark';
+        $log    = WRITEPATH . 'logs' . DIRECTORY_SEPARATOR . 'worker.log';
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $cmd = 'cmd /c start "TukangKirimWorker" /B "' . $php . '" "' . $spark
+                . '" tukangkirim:work 1>> "' . $log . '" 2>&1';
+        } else {
+            $cmd = 'nohup "' . $php . '" "' . $spark . '" tukangkirim:work >> "' . $log . '" 2>&1 &';
+        }
+
+        $launched = false;
+
+        try {
+            $handle = @popen($cmd, 'r');
+
+            if ($handle !== false) {
+                @pclose($handle);
+                $launched = true;
+            }
+        } catch (Throwable) {
+            $launched = false;
+        }
+
+        if ($launched) {
+            return redirect()->to(module_url('worker'))
+                ->with('success', 'Perintah nyalakan dikirim. Tunggu beberapa detik, status akan berubah jadi "Aktif". '
+                    . 'Bila tetap "Mati", jalankan scripts\\worker-start.bat.');
+        }
+
+        return redirect()->to(module_url('worker'))
+            ->with('errors', ['Tidak bisa meluncurkan worker dari web. Jalankan scripts\\worker-start.bat di server.']);
+    }
+
     /** Minta worker (daemon) berhenti dengan rapi. */
     public function stop(): RedirectResponse
     {
@@ -99,16 +149,18 @@ class Worker extends BaseController
             ]);
         }
 
+        $summary = null;
+        $error   = null;
+
         try {
             $summary = (new SendQueueService())->processOne();
         } catch (Throwable $e) {
-            $summary = null;
-            $error   = $e->getMessage();
+            $error = $e->getMessage();
         } finally {
             $db->query('SELECT RELEASE_LOCK(?)', [self::LOCK_NAME]);
         }
 
-        if (($error ?? null) !== null) {
+        if ($error !== null) {
             return $this->response->setJSON(['ok' => false, 'error' => $error, 'csrf' => csrf_hash()]);
         }
 

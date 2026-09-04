@@ -66,4 +66,13 @@ class MaxChat extends BaseConfig
      * Jeda worker saat antrean kosong sebelum mengecek lagi (detik).
      */
     public int $queueIdleSleep = 5;
+
+    /**
+     * Perintah PHP untuk meluncurkan worker dari tombol "Nyalakan" di web.
+     *
+     * Default 'php' mengandalkan PATH (biasanya cukup di Laragon). Bila server
+     * web tidak menemukan php, isi path lengkap di .env, contoh:
+     * `maxchat.phpBinary = 'C:\laragon\bin\php\php-8.2.30\php.exe'`.
+     */
+    public string $phpBinary = 'php';
 }
