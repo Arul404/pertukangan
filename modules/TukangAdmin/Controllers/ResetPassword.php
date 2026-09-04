@@ -72,8 +72,10 @@ class ResetPassword extends BaseController
             return redirect()->to(module_url());
         }
 
-        // Pencarian berdasarkan email atau NIK (parameter q di halaman /users).
-        // Nomor HP tidak lagi diketik; diambil dari hasil pencarian.
+        // Pencarian berdasarkan email, NIK, atau nomor HP (parameter q di halaman
+        // /users). Untuk email/NIK, nomor tujuan diambil dari hasil pencarian;
+        // untuk nohp, nomor yang diketik dipakai sebagai fallback bila tabel TTE
+        // tidak menampilkan nomornya.
         $by         = strtolower(trim((string) $this->request->getPost('by'))) ?: 'email';
         $value      = trim((string) $this->request->getPost('value'));
         $templateId = (int) $this->request->getPost('template_id');
@@ -92,14 +94,18 @@ class ResetPassword extends BaseController
 
         $errors = [];
 
-        if (! in_array($by, ['email', 'nik'], true)) {
+        $labels = ['email' => 'Email', 'nik' => 'NIK', 'nohp' => 'Nomor HP'];
+
+        if (! isset($labels[$by])) {
             $errors[] = 'Parameter pencarian tidak dikenal.';
         } elseif ($value === '') {
-            $errors[] = ($by === 'nik' ? 'NIK' : 'Email') . ' wajib diisi.';
+            $errors[] = $labels[$by] . ' wajib diisi.';
         } elseif ($by === 'email' && ! filter_var($value, FILTER_VALIDATE_EMAIL)) {
             $errors[] = 'Masukkan alamat email yang valid.';
         } elseif ($by === 'nik' && preg_match('/^\d{6,20}$/', $value) !== 1) {
             $errors[] = 'NIK harus berupa angka (6–20 digit).';
+        } elseif ($by === 'nohp' && preg_match('/^[\d\s+\-().]{7,20}$/', $value) !== 1) {
+            $errors[] = 'Nomor HP tidak valid.';
         }
 
         // Template ini harus memuat [password] — kalau tidak, kata sandi yang
@@ -122,14 +128,17 @@ class ResetPassword extends BaseController
             return $this->panel('error', null, ['Kesalahan tak terduga saat menghubungi TTE: ' . $e->getMessage()]);
         }
 
-        // Nomor HP diambil dari data pengguna; tanpa itu pesan tak bisa dikirim.
-        if (empty($user['phone'])) {
+        // Nomor tujuan: dari data pengguna; saat cari via nohp, nomor yang diketik
+        // jadi fallback bila tabel TTE tidak menampilkan nomornya.
+        $phone = $user['phone'] ?: ($by === 'nohp' ? $value : null);
+
+        if (empty($phone)) {
             return $this->panel('error', null, [
                 'Nomor HP tidak ditemukan pada data pengguna di TTE, sehingga kata sandi tidak bisa dikirim.',
             ]);
         }
 
-        $normalized = $this->maxchat->normalizeNumber($user['phone']);
+        $normalized = $this->maxchat->normalizeNumber($phone);
         $password   = (new PasswordGenerator())->generate();
 
         // Nilai otomatis yang bisa mengisi placeholder template. Placeholder
@@ -158,8 +167,8 @@ class ResetPassword extends BaseController
         $draft = [
             'search_by'        => $by,
             'search_value'     => $value,
-            // recipient_input pada riwayat memakai nomor mentah dari TTE.
-            'phone_input'      => $user['phone'],
+            // recipient_input pada riwayat memakai nomor mentah yang dipakai.
+            'phone_input'      => $phone,
             'phone_normalized' => $normalized,
             'email'            => $user['email'],
             'name'             => $user['name'],

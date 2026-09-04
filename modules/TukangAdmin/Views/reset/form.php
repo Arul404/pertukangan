@@ -14,7 +14,7 @@
 <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
     <div>
         <h1 class="h3 mb-1">Reset Password TTE</h1>
-        <p class="text-muted mb-0">Cari penandatangan berdasarkan email atau NIK. Sistem menemukan akunnya
+        <p class="text-muted mb-0">Cari penandatangan berdasarkan email, NIK, atau nomor HP. Sistem menemukan akunnya
             di TTE, mereset kata sandinya, lalu mengirimkannya lewat WhatsApp ke nomor HP dari data pengguna.</p>
     </div>
     <a href="<?= module_url('akun') ?>" class="btn btn-outline-secondary">
@@ -60,6 +60,7 @@
                         <select class="form-select" id="by" name="by" <?= $hasCredential ? '' : 'disabled' ?>>
                             <option value="email" selected>Email</option>
                             <option value="nik">NIK</option>
+                            <option value="nohp">No HP</option>
                         </select>
                     </div>
 
@@ -118,7 +119,7 @@
                                     <div class="fw-semibold">Cari akun</div>
                                     <div class="text-muted small">
                                         Sistem login ke TTE dan mencari akun <strong>penandatangan</strong>
-                                        yang cocok dengan email atau NIK, lalu mengambil email dan nomor HP-nya.
+                                        yang cocok dengan email, NIK, atau nomor HP, lalu mengambil email dan nomor HP-nya.
                                     </div>
                                 </div>
                             </div>
@@ -192,6 +193,12 @@
                 placeholder: '16 digit NIK',
                 inputmode: 'numeric',
                 help: 'Dipakai untuk mencari akun di TTE bila email lupa. Nomor HP tujuan WhatsApp diambil otomatis dari data pengguna yang ditemukan.',
+            },
+            nohp: {
+                label: 'No HP',
+                placeholder: '08123456789',
+                inputmode: 'tel',
+                help: 'Nomor ini dipakai untuk mencari akun sekaligus tujuan WhatsApp (nomor dari data pengguna dipakai bila tersedia).',
             },
         };
 

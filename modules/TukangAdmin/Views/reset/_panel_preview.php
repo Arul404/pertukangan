@@ -52,9 +52,10 @@
     </div>
     <div class="card-body">
         <dl class="row mb-3 small">
+            <?php $byLabels = ['email' => 'Email', 'nik' => 'NIK', 'nohp' => 'No HP']; ?>
             <dt class="col-4 text-muted fw-normal">Dicari via</dt>
             <dd class="col-8">
-                <span class="badge text-bg-secondary"><?= strtoupper(esc($draft['search_by'] ?? 'email')) ?></span>
+                <span class="badge text-bg-secondary"><?= esc($byLabels[$draft['search_by'] ?? 'email'] ?? 'Email') ?></span>
                 <?= esc($draft['search_value'] ?? '') ?>
             </dd>
 
