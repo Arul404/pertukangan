@@ -1,0 +1,45 @@
+<!--
+  Satu baris hasil pencarian /users, disalin apa adanya dari TTE
+  (nama/NIK/nomor tetap seperti aslinya karena sudah dibagikan operator untuk
+  keperluan ini). Struktur 10 kolom + tiga tombol aksi dipertahankan persis,
+  termasuk tautan "Kirim Pesan" ber-href javascript: yang tidak boleh terpilih.
+-->
+<table id="example2" class="table table-bordered table-hover table-responsive">
+  <thead>
+    <tr>
+      <th class="text-center">#</th>
+      <th>NIK</th>
+      <th>NAMA</th>
+      <th>WHATSAPP</th>
+      <th>EMAIL</th>
+      <th>SKPD</th>
+      <th>ROLE</th>
+      <th>KETERANGAN</th>
+      <th>STATUS</th>
+      <th class="text-center">Opsi</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="text-center">1</td>
+      <td>3371022303750001</td>
+      <td>
+        EDI WIDODO<br>
+      </td>
+      <td>
+        085290382571<br>
+        <a class="btn btn-outline-info btn-xs modal-send-custom-message" href="javascript:void(0)" data-id="085290382571"><i class="nav-icon fas fa-paper-plane"></i> <b>Kirim Pesan</b></a>
+      </td>
+      <td>hediwidodo10@magelangkab.go.id</td>
+      <td>Dinas Pendidikan dan Kebudayaan</td>
+      <td>penandatangan</td>
+      <td><span class="text-secondary text-xs">Password diubah pada 24 Aug 2026</span></td>
+      <td></td>
+      <td class="text-center">
+        <a class="btn btn-outline-info btn-xs" href="https://tte.magelangkab.go.id/users/password/8250" data-id="8250"><i class="nav-icon fas fa-pencil-alt"></i> <b>KATA SANDI</b></a>
+        <a class="btn btn-outline-primary btn-xs" href="https://tte.magelangkab.go.id/users/update/8250"><i class="nav-icon fas fa-pencil-alt"></i> <b>UBAH</b></a>
+        <a class="btn btn-outline-danger btn-xs" href="https://tte.magelangkab.go.id/users/delete/8250"><i class="nav-icon fas fa-trash-alt"></i> <b>HAPUS</b></a>
+      </td>
+    </tr>
+  </tbody>
+</table>

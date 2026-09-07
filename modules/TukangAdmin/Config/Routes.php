@@ -19,6 +19,8 @@ $routes->group(Module::SLUG, ['namespace' => 'Modules\TukangAdmin\Controllers'],
     // --- Reset password: satu halaman, dua langkah POST lewat fetch() ---
     $routes->get('/', 'ResetPassword::index');
     $routes->post('reset/search', 'ResetPassword::search');
+    // Langkah antara opsional: perbarui nomor WhatsApp di TTE sebelum reset.
+    $routes->post('reset/update-wa', 'ResetPassword::updateWhatsapp');
     $routes->post('reset/dispatch', 'ResetPassword::dispatch');
 
     // --- Kredensial login TTE ---
@@ -32,6 +34,12 @@ $routes->group(Module::SLUG, ['namespace' => 'Modules\TukangAdmin\Controllers'],
     $routes->group('passphrase', static function ($routes): void {
         $routes->get('/', 'ResetPassphrase::index');
         $routes->post('search', 'ResetPassphrase::search');
+        // Langkah antara: perbaiki nomor HP di BSrE sebelum reset. Ketiganya
+        // membaca draft tanpa mengklaim, jadi boleh gagal tanpa merusak preview.
+        $routes->post('update-phone', 'ResetPassphrase::updatePhone');
+        $routes->post('approve-update', 'ResetPassphrase::approveUpdate');
+        $routes->post('skip-update', 'ResetPassphrase::skipUpdate');
+        // Langkah terakhir; kedua cabangnya (verifikasi HP / reset) titik akhir.
         $routes->post('dispatch', 'ResetPassphrase::dispatch');
     });
 

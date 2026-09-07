@@ -12,10 +12,16 @@ use Modules\TukangAdmin\Config\Bsre as BsreConfig;
  * API bertoken. Klien ini menirukan panggilan-panggilan itu memakai cURL:
  *
  *   POST /api/login                              -> token Bearer
- *   POST /api/rest/manage/user/list              -> cari pengguna (by email)
- *   GET  /api/rest/manage/user/details/{uid}     -> sertifikat + status HP
+ *   POST /api/rest/manage/user/list              -> cari pengguna (by email/NIK)
+ *   GET  /api/rest/manage/user/details/{uid}     -> profil + sertifikat + status HP
  *   GET  /api/rest/manage/cert/passphrase/reset/{uid}/{serial}  -> kirim tautan reset
  *   POST /api/rest/manage/user/verify/phone      -> kirim tautan verifikasi HP (WA)
+ *
+ * Ditambah tiga panggilan TULIS untuk memperbaiki nomor HP yang salah:
+ *
+ *   POST /api/rest/manage/user/edit/{uid}        -> simpan perubahan (masuk antrean)
+ *   POST /api/rest/manage/verify/user/update     -> permintaan perubahan yang menunggu
+ *   POST /api/rest/manage/verify/user/approval   -> setujui permintaan itu
  *
  * Tiap panggilan /api/rest wajib membawa header Authorization (token) dan
  * X-USER-IP. Token diperoleh saat login dan dipakai ulang selama masih berlaku;
@@ -24,13 +30,21 @@ use Modules\TukangAdmin\Config\Bsre as BsreConfig;
  * Cookie jar cURL dipertahankan selama satu instance, sehingga handshake login
  * berbasis cookie (bila ada, mis. saat langkah OTP) tetap terbawa antar request.
  *
- * CATATAN IMPLEMENTASI: bentuk pasti balikan API (mis. key pada baris hasil
- * pencarian, path field pada detail, dan protokol OTP saat login) difinalkan
- * dengan login sungguhan. Pembaca di bawah sengaja dibuat toleran: mencari nilai
- * lewat beberapa kemungkinan key, bukan satu key kaku.
+ * Seluruh path dan bentuk payload di atas DIREKAM dari portal (tangkapan HAR),
+ * bukan ditebak — termasuk detail yang mudah salah kalau dikira-kira: `search`
+ * dikirim kosong sementara nilainya hanya di `filters`, `approve` berupa string
+ * "true", dan penyimpanan profil hanya membawa kolom tertentu. Pembaca balikan
+ * tetap dibuat toleran (mencari nilai lewat beberapa kemungkinan key) supaya
+ * perubahan kecil di sisi BSrE tidak langsung mematahkan modul ini.
  */
 class BsreClient
 {
+    /** Kemungkinan nama kolom nomor HP pada profil pengguna. */
+    protected const PHONE_KEYS = ['phone', 'noHp', 'phoneNumber', 'no_hp', 'telepon'];
+
+    /** Nilai `status` sertifikat yang masih berlaku. */
+    protected const CERT_ISSUED = 'ISSUE';
+
     protected BsreConfig $config;
     protected string $baseUrl;
     protected string $cookieJar;
@@ -169,17 +183,18 @@ class BsreClient
      *     email: string,
      *     phone: ?string,
      *     phoneVerified: bool,
-     *     certificates: list<array{serial: string, jenis: ?string, notAfter: ?string, raw: array}>
+     *     certificates: list<array{serial: string, jenis: ?string, notAfter: ?string, status: ?string, raw: array}>
      * }
      */
     public function findUser(string $value, string $filterKey = 'email'): array
     {
         $this->requireToken();
 
+        // Bentuk body ini direkam dari portal: `search` dikirim KOSONG dan nilai
+        // pencarian hanya ditaruh di `filters`. Mengisi `search` juga berarti
+        // menebak-nebak perilaku yang tidak pernah kita amati.
         $list = $this->request('POST', $this->config->userListPath, [
-            // `search` (free-text) selalu ikut agar tetap ketemu meski key filter
-            // meleset; `filters` menyaring sesuai parameter (email/nik) terpilih.
-            'search'  => $value,
+            'search'  => '',
             'start'   => 0,
             'length'  => 10,
             'filters' => [$filterKey => $value],
@@ -194,9 +209,13 @@ class BsreClient
         $uid = $this->uidForValue($rows, $value);
 
         if ($uid === null) {
-            throw new BsreClientException(
-                'Baris pengguna untuk "' . $value . '" ditemukan, tetapi id-nya tidak terbaca.'
-            );
+            // Baris hasil pencarian tidak selalu memuat nilai yang dicari — pada
+            // pencarian NIK, kolom nik/nip/phone dikirim kosong — jadi saat ada
+            // beberapa baris, tak satu pun bisa dipastikan sebagai orang yang
+            // dimaksud. Menebak salah satu di sinilah yang harus dihindari.
+            throw new BsreClientException('Pencarian ' . $filterKey . ' "' . $value . '" menghasilkan '
+                . count($rows) . ' pengguna dan tidak ada yang bisa dipastikan sebagai orang yang '
+                . 'dimaksud. Persempit dengan email.');
         }
 
         // Fallback email hanya bermakna bila pencarian memang lewat email.
@@ -206,14 +225,11 @@ class BsreClient
     /**
      * Detail pengguna (sertifikat + status verifikasi HP) berdasarkan uid.
      *
-     * @return array{uid: string, name: string, email: string, phone: ?string, phoneVerified: bool, certificates: list<array>}
+     * @return array{uid: string, name: string, email: string, nik: ?string, phone: ?string, phoneVerified: bool, certificates: list<array>}
      */
     public function userDetails(string $uid, string $emailFallback = ''): array
     {
-        $this->requireToken();
-
-        $res  = $this->request('GET', $this->config->userDetailsPath . rawurlencode($uid));
-        $data = $this->dataOf($res['json']);
+        $data = $this->detailsPayload($uid);
 
         $profile = $this->valueOf($data, ['profile', 'user', 'dataUser']) ?? $data;
         $certs   = $this->valueOf($data, ['sertifikat', 'certificates', 'certificate']) ?? [];
@@ -235,18 +251,61 @@ class BsreClient
                 'serial'   => (string) $serial,
                 'jenis'    => $this->stringOrNull($this->valueOf($cert, ['jenisSertifikat', 'jenis', 'type'])),
                 'notAfter' => $this->stringOrNull($this->valueOf($cert, ['notAfterDate', 'notAfter', 'expiredDate'])),
+                'status'   => $this->stringOrNull($this->valueOf($cert, ['status'])),
                 'raw'      => $cert,
             ];
         }
 
+        // Pemanggil mengambil sertifikat pertama sebagai target reset, jadi yang
+        // berstatus terbit didahulukan: satu akun bisa punya sertifikat lama yang
+        // sudah dicabut, dan urutan balikan server bukan jaminan apa pun.
+        usort($certificates, static fn (array $a, array $b): int => (int) ($b['status'] === self::CERT_ISSUED)
+            <=> (int) ($a['status'] === self::CERT_ISSUED));
+
         return [
             'uid'           => $uid,
             'name'          => (string) ($this->valueOf($profile, ['nama', 'name', 'fullname']) ?? $emailFallback),
-            'email'         => (string) ($this->valueOf($profile, ['email', 'emailDinas', 'mail']) ?? $emailFallback),
-            'phone'         => $this->stringOrNull($this->valueOf($profile, ['noHp', 'phone', 'phoneNumber', 'no_hp', 'telepon'])),
+            // `emailAddress` adalah nama yang BSrE pakai; tanpa itu, pencarian lewat
+            // NIK/No HP menghasilkan draft ber-email kosong — dan email itulah yang
+            // dipakai mencari antrean persetujuan nanti.
+            'email'         => (string) ($this->valueOf($profile, ['emailAddress', 'email', 'emailDinas', 'mail']) ?? $emailFallback),
+            // Antrean persetujuan perubahan dicari lewat NIK/email, jadi NIK ikut
+            // dibawa pulang selagi profilnya memang sudah di tangan.
+            'nik'           => $this->stringOrNull($this->valueOf($profile, ['nik', 'nomorNik', 'noIdentitas', 'no_identitas'])),
+            'phone'         => $this->stringOrNull($this->valueOf($profile, self::PHONE_KEYS)),
             'phoneVerified' => (bool) ($this->valueOf($profile, ['phoneVerified', 'phone_verified', 'isPhoneVerified']) ?? false),
             'certificates'  => $certificates,
         ];
+    }
+
+    /**
+     * Objek `data` pada balikan detail pengguna.
+     */
+    protected function detailsPayload(string $uid): mixed
+    {
+        $this->requireToken();
+
+        $res = $this->request('GET', $this->config->userDetailsPath . rawurlencode($uid));
+
+        return $this->dataOf($res['json']);
+    }
+
+    /**
+     * Profil pengguna APA ADANYA, sebagaimana dikirim server.
+     *
+     * Berbeda dengan {@see self::userDetails()} yang menormalkan beberapa field
+     * saja, ini mengembalikan seluruh objek profil — dibutuhkan {@see
+     * self::updateUserPhone()} yang harus mengirim ulang kolom-kolom itu tanpa
+     * perlu tahu artinya.
+     *
+     * @return array<string, mixed>
+     */
+    public function userProfile(string $uid): array
+    {
+        $data    = $this->detailsPayload($uid);
+        $profile = $this->valueOf($data, ['profile', 'user', 'dataUser']) ?? $data;
+
+        return is_array($profile) ? $profile : [];
     }
 
     /**
@@ -302,6 +361,183 @@ class BsreClient
 
         return $this->messageOf($res)
             ?? 'Tautan verifikasi telah dikirim ke WhatsApp pengguna.';
+    }
+
+    // ---------------------------------------------------------------------
+    // Ubah data akun & persetujuannya
+    // ---------------------------------------------------------------------
+
+    /**
+     * Simpan perubahan nomor HP pengguna (setara tab "Ubah Akun" -> Simpan).
+     *
+     * Portal tidak memantulkan seluruh profil: ia mengirim tepat kolom-kolom pada
+     * {@see BsreConfig::$profileEditFields} dan tidak lebih. Payload di sini
+     * disusun persis begitu, diambil dari profil yang BARU SAJA dikembalikan
+     * server, dengan hanya kolom nomor yang diganti — supaya permintaan tulis ini
+     * tidak pernah membawa nilai yang tidak berasal dari BSrE sendiri.
+     *
+     * Bila ada satu saja kolom wajib yang tidak ada pada profil, TIDAK ADA yang
+     * dikirim. Prinsipnya sama dengan `editStrictFields` pada
+     * {@see TteScraper::updateWhatsapp()}: lebih baik batal daripada menyimpan
+     * profil dengan kolom hasil tebakan.
+     *
+     * Perubahan ini BELUM berlaku — ia masuk antrean dan harus disetujui lewat
+     * {@see self::approveUserUpdate()}.
+     *
+     * @return array{before: ?string, after: string, message: string}
+     */
+    public function updateUserPhone(string $uid, string $phone): array
+    {
+        $path    = $this->requirePath($this->config->userUpdatePath, 'userUpdatePath', 'menyimpan perubahan data akun');
+        $profile = $this->userProfile($uid);
+
+        if ($profile === []) {
+            throw new BsreClientException('Profil pengguna tidak terbaca dari BSrE, jadi perubahan '
+                . 'nomor dibatalkan. Tidak ada data yang dikirim.');
+        }
+
+        $field   = $this->config->profilePhoneField;
+        $wanted  = $this->editFields();
+        $payload = [];
+        $missing = [];
+
+        foreach ($wanted as $key) {
+            if (! array_key_exists($key, $profile)) {
+                $missing[] = $key;
+
+                continue;
+            }
+
+            $payload[$key] = $profile[$key];
+        }
+
+        if ($missing !== []) {
+            throw new BsreClientException('Kolom ' . implode(', ', $missing) . ' tidak ada pada profil '
+                . 'yang dikirim BSrE, jadi perubahan nomor dibatalkan agar data pengguna tidak tersimpan '
+                . 'dengan kolom hasil tebakan. Tidak ada yang dikirim. Sesuaikan bsre.profileEditFields '
+                . 'bila bentuk profilnya berubah.');
+        }
+
+        $before          = $this->stringOrNull($profile[$field] ?? null);
+        $payload[$field] = $phone;
+
+        $res = $this->request('POST', $path . rawurlencode($uid), $payload);
+
+        if (! $this->isSuccess($res)) {
+            throw new BsreClientException(
+                $this->messageOf($res) ?? 'BSrE menolak perubahan nomor HP (HTTP ' . $res['code'] . ').'
+            );
+        }
+
+        return [
+            'before'  => $before,
+            'after'   => $phone,
+            'message' => $this->messageOf($res) ?? 'Perubahan nomor HP tersimpan dan menunggu persetujuan.',
+        ];
+    }
+
+    /**
+     * Kolom yang ikut dikirim saat menyimpan profil, sudah dipecah dan dirapikan.
+     *
+     * Kolom nomor selalu ikut walau tidak tercantum di config — tanpanya
+     * perubahan yang hendak disimpan justru tidak akan terkirim.
+     *
+     * @return list<string>
+     */
+    protected function editFields(): array
+    {
+        $fields = [];
+
+        foreach (explode(',', $this->config->profileEditFields) as $piece) {
+            $piece = trim($piece);
+
+            if ($piece !== '' && ! in_array($piece, $fields, true)) {
+                $fields[] = $piece;
+            }
+        }
+
+        if (! in_array($this->config->profilePhoneField, $fields, true)) {
+            $fields[] = $this->config->profilePhoneField;
+        }
+
+        return $fields;
+    }
+
+    /**
+     * Pastikan ada permintaan perubahan data milik $uid yang menunggu persetujuan.
+     *
+     * Setara membuka /app/users/update/list lalu mencari pengguna berdasarkan
+     * NIK/email. Perannya KONFIRMASI, bukan mencari id: barisnya ber-`id` sama
+     * persis dengan uid pengguna, jadi id-nya sudah kita pegang sejak awal. Yang
+     * dibeli langkah ini adalah kepastian bahwa perubahannya memang masih
+     * menunggu — tanpa itu, persetujuan bisa dikirim untuk sesuatu yang sudah
+     * disetujui, kedaluwarsa, atau tidak pernah tersimpan.
+     *
+     * @return array{id: string, raw: array<string, mixed>}
+     */
+    public function findUpdateRequest(string $uid, string $value, string $filterKey = 'email'): array
+    {
+        $path = $this->requirePath($this->config->updateListPath, 'updateListPath', 'mencari permintaan perubahan');
+
+        $list = $this->request('POST', $path, [
+            'search'  => '',
+            'start'   => 0,
+            'length'  => 10,
+            'filters' => [$filterKey => $value],
+        ]);
+
+        foreach ($this->rowsOf($list['json']) as $row) {
+            if (is_array($row) && $this->uidOf($row) === $uid) {
+                return ['id' => $uid, 'raw' => $row];
+            }
+        }
+
+        throw new BsreClientException('Tidak ada permintaan perubahan data yang menunggu persetujuan '
+            . 'untuk pengguna ini. Perubahannya mungkin sudah disetujui, atau belum tersimpan.');
+    }
+
+    /**
+     * Setujui satu permintaan perubahan data (tombol "Verifikasi" pada detailnya).
+     *
+     * @return string Pesan sukses dari server.
+     */
+    public function approveUserUpdate(string $requestId): string
+    {
+        $path = $this->requirePath($this->config->updateVerifyPath, 'updateVerifyPath', 'menyetujui perubahan data');
+
+        // `approve` dikirim portal sebagai string "true", bukan boolean — ditiru
+        // apa adanya karena tak ada gunanya menguji apakah server juga menerima
+        // bentuk lain pada permintaan yang menyetujui perubahan data.
+        $res = $this->request('POST', $path, [
+            'id'      => $requestId,
+            'approve' => 'true',
+            'message' => $this->config->approvalMessage,
+        ]);
+
+        if (! $this->isSuccess($res)) {
+            throw new BsreClientException(
+                $this->messageOf($res) ?? 'BSrE menolak persetujuan perubahan data (HTTP ' . $res['code'] . ').'
+            );
+        }
+
+        return $this->messageOf($res) ?? 'Perubahan data akun telah disetujui.';
+    }
+
+    /**
+     * Pastikan sebuah path endpoint sudah dikonfigurasi.
+     *
+     * Endpoint tulis sengaja kosong secara bawaan {@see \Modules\TukangAdmin\Config\Bsre}.
+     * Pesan galatnya menyebut nama kunci .env-nya supaya operator tahu persis apa
+     * yang kurang, bukan sekadar "gagal".
+     */
+    protected function requirePath(string $path, string $key, string $purpose): string
+    {
+        if (trim($path) === '') {
+            throw new BsreClientException('Endpoint BSrE untuk ' . $purpose . ' belum dikonfigurasi. '
+                . 'Isi `bsre.' . $key . '` di .env dengan path API yang dipakai portal.');
+        }
+
+        return $path;
     }
 
     // ---------------------------------------------------------------------

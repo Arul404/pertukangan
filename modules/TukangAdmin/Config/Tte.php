@@ -70,4 +70,48 @@ class Tte extends BaseConfig
      * bila host memakai sertifikat yang tidak terpercaya di lingkungan lokal.
      */
     public bool $verifySsl = true;
+
+    /**
+     * Kata kunci tombol "ubah kata sandi" pada baris /users.
+     *
+     * Ditulis sebagai string dipisah koma, bukan array, karena
+     * BaseConfig::initEnvValue() hanya menimpa kunci array yang SUDAH ada —
+     * lewat .env sebuah array tidak bisa ditambah isinya, sementara docblock
+     * kelas ini menjanjikan semua nilai bisa ditimpa.
+     */
+    public string $passwordLinkNeedles = 'sandi,password';
+
+    /**
+     * Kata kunci tombol "ubah data pengguna" pada baris /users.
+     *
+     * Sebuah tautan dianggap tombol ubah HANYA bila cocok di sini DAN tidak
+     * cocok dengan passwordLinkNeedles. Pada markup TTE saat ini labelnya
+     * "UBAH" (href .../users/update/8250) sedangkan tombol sandi "KATA SANDI"
+     * (href .../users/password/8250), jadi keduanya sudah terpisah sendirinya —
+     * daftar tolak dipasang supaya pemisahan itu terjamin secara struktur, bukan
+     * kebetulan.
+     */
+    public string $editLinkNeedles = 'ubah,edit';
+
+    /**
+     * Nama kolom nomor WhatsApp pada form ubah pengguna TTE. Form dicari lewat
+     * nama kolom ini, bukan lewat pola URL, supaya tidak ada URL tulis yang
+     * ditebak-tebak.
+     */
+    public string $whatsappField = 'nowhatsapp';
+
+    /**
+     * Bentuk nomor yang ditulis ke TTE: 'auto' mengikuti format nilai lama
+     * (TTE menyimpan 085290382571, jadi jangan lawan konvensinya sendiri),
+     * 'local' selalu 08…, 'international' selalu 62….
+     */
+    public string $whatsappFormat = 'auto';
+
+    /**
+     * Menyimpan form ubah berarti mengirim ULANG semua kolomnya. Bila true,
+     * penyimpanan dibatalkan saat ada kolom yang nilainya tidak bisa dipastikan
+     * dari markup (mis. <select> yang dipilih JavaScript) — tidak ada yang
+     * dikirim, daripada berisiko menimpa data pengguna dengan nilai tebakan.
+     */
+    public bool $editStrictFields = true;
 }

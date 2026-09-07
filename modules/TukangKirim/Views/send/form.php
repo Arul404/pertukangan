@@ -4,8 +4,7 @@
 
 <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
     <div>
-        <h1 class="h3 mb-1">Kirim Pesan</h1>
-        <p class="text-muted mb-0">Pilih template, isi datanya, periksa hasilnya di panel kanan, lalu kirim.</p>
+        <h1 class="h3 mb-0">Kirim Pesan</h1>
     </div>
     <a href="<?= module_url('templates') ?>" class="btn btn-outline-secondary">
         <i class="bi bi-file-earmark-text me-1"></i> Kelola Template
@@ -55,13 +54,20 @@
                         <hr class="my-4">
                         <div class="fw-semibold mb-2">Isi data</div>
                         <div class="row g-3" id="placeholder-fields"></div>
-                        <div id="password-note" class="alert alert-info d-flex align-items-start mt-3 mb-0" hidden>
-                            <i class="bi bi-shield-lock-fill me-2 fs-5"></i>
-                            <div class="small">
-                                Template ini memuat <code class="placeholder-chip">[password]</code>.
-                                Password acak (minimal 10 karakter, mengandung huruf kapital, angka, dan
-                                karakter spesial) dibuat otomatis dan ditampilkan di panel kanan.
-                            </div>
+                        <!--
+                            JANGAN pakai d-flex di sini: Bootstrap punya
+                            [hidden]{display:none!important} di reboot, sedangkan
+                            .d-flex{display:flex!important} jauh lebih belakang di
+                            berkas yang sama. Keduanya !important dengan spesifisitas
+                            sama, jadi d-flex menang dan atribut hidden tidak berefek —
+                            catatan ini pernah selalu tampil, termasuk untuk template
+                            yang justru TIDAK memuat [password].
+                        -->
+                        <div id="password-note" class="alert alert-info mt-3 mb-0 small" hidden>
+                            <i class="bi bi-shield-lock-fill me-2"></i>
+                            Template ini memuat <code class="placeholder-chip">[password]</code>.
+                            Password acak (minimal 10 karakter, mengandung huruf kapital, angka, dan
+                            karakter spesial) dibuat otomatis dan ditampilkan di panel kanan.
                         </div>
                     </div>
 

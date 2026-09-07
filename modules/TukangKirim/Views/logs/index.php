@@ -11,8 +11,7 @@
 ?>
 
 <div class="mb-3">
-    <h1 class="h3 mb-1">Riwayat Pengiriman</h1>
-    <p class="text-muted mb-0">Isi pesan tersimpan dengan password ter-mask — password asli tidak pernah masuk database.</p>
+    <h1 class="h3 mb-0">Riwayat Pengiriman</h1>
 </div>
 
 <form method="get" class="row g-2 mb-3">

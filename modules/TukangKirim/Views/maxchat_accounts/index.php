@@ -24,11 +24,7 @@ foreach ($accounts as $a) {
 
 <div class="d-flex align-items-center justify-content-between mb-3">
     <div>
-        <h1 class="h3 mb-1">Akun MaxChat</h1>
-        <p class="text-muted mb-0">
-            Pengiriman dirotasi bergiliran ke seluruh akun aktif. Bila satu akun gagal,
-            akun berikutnya otomatis dicoba pada pengiriman yang sama.
-        </p>
+        <h1 class="h3 mb-0">Akun MaxChat</h1>
     </div>
     <a href="<?= module_url('accounts/create') ?>" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> Akun Baru</a>
 </div>

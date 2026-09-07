@@ -1,0 +1,86 @@
+<!--
+  Halaman "Ubah Pengguna" (GET /users/update/8250), disalin dari TTE.
+  Satu-satunya penyederhanaan: daftar <option> skpd_id dipangkas dari 1329 jadi
+  tiga, dengan opsi ber-atribut selected tetap dipertahankan — parser hanya
+  peduli pada option[@selected] dan option pertama, jadi strukturnya tetap setara.
+
+  Perhatikan: form ini TIDAK punya _method (POST biasa), berbeda dari form ubah
+  kata sandi yang memakai _method=PUT. Kedua bentuk itu harus sama-sama terbawa
+  utuh oleh readForm().
+-->
+<div class="card-header">
+  <h5 class="card-title font-weight-bold">Ubah Pengguna</h5>
+</div>
+
+<div class="card-body">
+  <form method="post" action="/users/update">
+    <input type="hidden" name="csrf_token_tte" value="31c6b4f720c6359033a1aed246908698f80d6a5859a1ae8e3c8b733af9671eef" />
+    <div class="modal-body">
+
+      <input type="hidden" name="id" value="8250">
+
+      <div class="form-group">
+        <label>Nama Lengkap</label>
+        <input type="text" name="namalengkap" value="EDI WIDODO" class="form-control " placeholder="Nama Lengkap" required>
+        <span class="error invalid-feedback"></span>
+      </div>
+
+      <div class="form-group">
+        <label>NIK</label>
+        <input type="text" name="nik" value="3371022303750001" class="form-control " placeholder="NIK" required>
+        <span class="error invalid-feedback"></span>
+      </div>
+
+      <div class="row">
+        <div class="col-sm-6">
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" name="email" value="hediwidodo10@magelangkab.go.id" class="form-control " placeholder="Email" required>
+            <span class="error invalid-feedback"></span>
+          </div>
+        </div>
+        <div class="col-sm-6">
+          <div class="form-group">
+            <label>No WhatsApp</label>
+            <input type="text" name="nowhatsapp" value="085290382571" class="form-control " placeholder="No WhatsApp" required>
+            <span class="error invalid-feedback"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-sm-6">
+          <div class="form-group">
+            <label>Role</label>
+            <select name="group_id" class="form-control select2" style="width: 100%;">
+              <option value="3">Adminskpd</option>
+              <option value="5" selected>Penandatangan</option>
+              <option value="7">Verifikator</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="col-sm-6">
+          <div class="form-group">
+            <label>SKPD</label>
+            <select name="skpd_id" class="form-control select2" style="width: 100%;">
+              <option value="1135">ADIKARTO Kecamatan MUNTILAN</option>
+              <option value="15" selected>Dinas Pendidikan Dan Kebudayaan</option>
+              <option value="22">Dinas Kesehatan</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-sm-4">
+          <a href="/users" class="btn btn-block btn-danger">Kembali</a>
+        </div>
+        <div class="col-sm-8">
+          <button type="submit" class="btn btn-block btn-primary">Ubah</button>
+        </div>
+      </div>
+
+    </div>
+  </form>
+</div>

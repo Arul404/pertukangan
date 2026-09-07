@@ -57,6 +57,19 @@ class SendWorker extends BaseCommand
             . '. Setelan jeda & jeda/lanjut dibaca dari halaman Worker. Ctrl+C untuk berhenti.', 'green');
 
         try {
+            // Kunci sudah di tangan, jadi tidak ada proses lain yang sedang
+            // mengirim: setiap baris `processing` yang tersisa pasti ditinggalkan
+            // worker yang mati di tengah jalan. Bereskan sebelum menguras antrean.
+            $recovered = $service->reclaimOrphans();
+
+            if ($recovered['requeued'] > 0 || $recovered['abandoned'] > 0) {
+                CLI::write(sprintf(
+                    'Pemulihan: %d pesan dikembalikan ke antrean, %d ditinggalkan (worker sebelumnya mati di tengah kirim).',
+                    $recovered['requeued'],
+                    $recovered['abandoned'],
+                ), 'yellow');
+            }
+
             while (true) {
                 $settings->heartbeat();
                 $control = $settings->current();

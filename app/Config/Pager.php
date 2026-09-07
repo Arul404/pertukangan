@@ -21,7 +21,12 @@ class Pager extends BaseConfig
      * @var array<string, string>
      */
     public array $templates = [
-        'default_full'   => 'CodeIgniter\Pager\Views\default_full',
+        // Template bawaan diganti versi Bootstrap 5: markup bawaan CodeIgniter
+        // masih Bootstrap 3 (tanpa .page-item/.page-link) sehingga pagination
+        // tampil telanjang di tema ini. Diganti pada kunci `default_full` —
+        // bukan ditambah sebagai kunci baru — supaya halaman berpaginasi yang
+        // dibuat nanti ikut benar tanpa perlu menyebut nama template.
+        'default_full'   => 'pager/bootstrap5_full',
         'default_simple' => 'CodeIgniter\Pager\Views\default_simple',
         'default_head'   => 'CodeIgniter\Pager\Views\default_head',
     ];

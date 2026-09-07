@@ -9,6 +9,12 @@ use CodeIgniter\Model;
  *
  * Worker tunggal (spark tukangkirim:work) mengambil baris paling lama yang sudah
  * boleh diproses, mengirimnya, mencatat ke message_logs, lalu menghapus barisnya.
+ *
+ * Daur hidup baris yatim: bila worker mati di antara claimNext() dan drop(),
+ * barisnya tertinggal berstatus `processing` dan tak akan diambil siapa pun lagi
+ * (claimNext hanya melihat `queued`). Baris seperti itu dipulihkan lewat
+ * {@see self::orphans()} + {@see self::requeue()}, yang dipanggil
+ * SendQueueService::reclaimOrphans() saat kunci worker baru diperoleh.
  */
 class MessageQueueModel extends Model
 {
@@ -85,10 +91,40 @@ class MessageQueueModel extends Model
         $this->delete($id);
     }
 
-    /** Tandai gagal permanen (audit kegagalan sudah tercatat di message_logs). */
-    public function markFailed(int $id): void
+    /**
+     * Baris yang tertinggal berstatus `processing` — yatim.
+     *
+     * Hanya benar bila pemanggil sedang memegang GET_LOCK worker: saat itu tidak
+     * ada proses lain yang mengirim, jadi setiap baris `processing` pasti sisa
+     * proses yang mati di tengah jalan. Tanpa kunci itu, hasilnya bisa memuat
+     * baris yang sedang benar-benar diproses worker lain.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function orphans(): array
     {
-        $this->update($id, ['status' => 'failed', 'updated_at' => date('Y-m-d H:i:s')]);
+        return $this->where('status', 'processing')->orderBy('id', 'ASC')->findAll();
+    }
+
+    /**
+     * Kembalikan satu baris yatim ke antrean dan naikkan hitungan percobaannya.
+     *
+     * @return int nilai `attempts` yang baru
+     */
+    public function requeue(int $id): int
+    {
+        $now      = date('Y-m-d H:i:s');
+        $attempts = (int) ($this->find($id)['attempts'] ?? 0) + 1;
+
+        $this->update($id, [
+            'status'       => 'queued',
+            'attempts'     => $attempts,
+            'locked_at'    => null,
+            'available_at' => $now,
+            'updated_at'   => $now,
+        ]);
+
+        return $attempts;
     }
 
     /** Jumlah pesan yang masih menunggu/di-proses. */

@@ -6,8 +6,12 @@ use App\Controllers\BaseController;
 use CodeIgniter\HTTP\RedirectResponse;
 use CodeIgniter\HTTP\ResponseInterface;
 use Modules\TukangAdmin\Config\Module;
+use Modules\TukangAdmin\Libraries\PhoneNumbers;
+use Modules\TukangAdmin\Libraries\SearchIdentifier;
 use Modules\TukangAdmin\Libraries\TteScraper;
 use Modules\TukangAdmin\Libraries\TteScraperException;
+use Modules\TukangAdmin\Libraries\TteUpdateReport;
+use Modules\TukangAdmin\Libraries\TteUserNotFoundException;
 use Modules\TukangAdmin\Models\ResetDraftModel;
 use Modules\TukangAdmin\Models\TteCredentialModel;
 use Modules\TukangKirim\Libraries\MaxChatDispatcher;
@@ -80,12 +84,13 @@ class ResetPassword extends BaseController
             return redirect()->to(module_url());
         }
 
-        // Pencarian berdasarkan email, NIK, atau nomor HP (parameter q di halaman
-        // /users). Untuk email/NIK, nomor tujuan diambil dari hasil pencarian;
-        // untuk nohp, nomor yang diketik dipakai sebagai fallback bila tabel TTE
-        // tidak menampilkan nomornya.
-        $by         = strtolower(trim((string) $this->request->getPost('by'))) ?: 'email';
-        $value      = trim((string) $this->request->getPost('value'));
+        // Nomor HP adalah input utama: itulah yang benar-benar dipegang operator
+        // saat ada permintaan reset, dan itu pula tujuan pengirimannya. Kolom
+        // cadangan (NIK/email) hanya dipakai bila pencarian nomor tidak menemukan
+        // siapa pun — nomornya sendiri TETAP wajib diisi, karena justru
+        // ketidakcocokan nomor itulah sebab pencarian pertama gagal.
+        $phone      = trim((string) $this->request->getPost('phone'));
+        $fallback   = trim((string) $this->request->getPost('fallback'));
         $templateId = (int) $this->request->getPost('template_id');
 
         $credential = $this->credentials->current();
@@ -102,18 +107,8 @@ class ResetPassword extends BaseController
 
         $errors = [];
 
-        $labels = ['email' => 'Email', 'nik' => 'NIK', 'nohp' => 'Nomor HP'];
-
-        if (! isset($labels[$by])) {
-            $errors[] = 'Parameter pencarian tidak dikenal.';
-        } elseif ($value === '') {
-            $errors[] = $labels[$by] . ' wajib diisi.';
-        } elseif ($by === 'email' && ! filter_var($value, FILTER_VALIDATE_EMAIL)) {
-            $errors[] = 'Masukkan alamat email yang valid.';
-        } elseif ($by === 'nik' && preg_match('/^\d{6,20}$/', $value) !== 1) {
-            $errors[] = 'NIK harus berupa angka (6–20 digit).';
-        } elseif ($by === 'nohp' && preg_match('/^[\d\s+\-().]{7,20}$/', $value) !== 1) {
-            $errors[] = 'Nomor HP tidak valid.';
+        if ($phone === '') {
+            $errors[] = 'Nomor HP wajib diisi.';
         }
 
         // Template ini harus memuat [password] — kalau tidak, kata sandi yang
@@ -126,38 +121,70 @@ class ResetPassword extends BaseController
             return $this->panel('error', null, $errors);
         }
 
+        // Validasi ketat dilakukan saat INPUT, bukan setelah pulang-pergi ke TTE:
+        // operator langsung tahu nomornya cacat tanpa menunggu scraping.
+        $normalized = $this->maxchat->normalizedMobile($phone);
+
+        if ($normalized === null) {
+            return $this->panel('error', null, [
+                'Nomor HP tidak valid: "' . $phone . '". Gunakan format 08xx / 62xx dengan panjang wajar.',
+            ]);
+        }
+
+        // Kata kunci pencarian: nomor lebih dulu, kolom cadangan hanya bila diisi.
+        if ($fallback === '') {
+            $by       = 'nohp';
+            $queries  = $this->phoneVariants($normalized);
+        } else {
+            $detected = $this->detectFallback($fallback);
+
+            if (isset($detected['error'])) {
+                return $this->panel('error', null, [$detected['error']]);
+            }
+
+            $by      = $detected['by'];
+            $queries = [$detected['value']];
+        }
+
         try {
             $scraper = new TteScraper(null, $credential['base_url'] ?? null);
             $scraper->login($credential['username'], $this->credentials->plainPassword($credential));
-            $user = $scraper->findPenandatangan($value);
+
+            // Satu sesi, beberapa bentuk nomor: TTE menyimpan 08…, jadi operator
+            // yang mengetik +62… tidak boleh dapat "tidak ketemu" palsu.
+            $user      = null;
+            $notFound  = null;
+
+            foreach ($queries as $query) {
+                try {
+                    $user  = $scraper->findPenandatangan($query);
+                    $value = $query;
+                    break;
+                } catch (TteUserNotFoundException $e) {
+                    $notFound = $e;
+                }
+            }
+
+            if ($user === null) {
+                throw $notFound ?? new TteUserNotFoundException('Pencarian tidak menghasilkan apa pun.');
+            }
+        } catch (TteUserNotFoundException $e) {
+            // Hanya jalur nomor yang menawarkan kolom cadangan; bila cadangan pun
+            // sudah dipakai, ini galat biasa.
+            if ($by === 'nohp') {
+                return $this->panel('notfound', view(Module::VIEWS . 'reset/_panel_notfound', [
+                    'phone'  => $phone,
+                    'reason' => $e->getMessage(),
+                ]));
+            }
+
+            return $this->panel('error', null, [$e->getMessage()]);
         } catch (TteScraperException $e) {
+            // Markup berubah, hasil ganda, atau TTE tidak bisa dihubungi — jangan
+            // pernah menyuruh operator "coba NIK" untuk sebab seperti ini.
             return $this->panel('error', null, [$e->getMessage()]);
         } catch (Throwable $e) {
             return $this->panel('error', null, ['Kesalahan tak terduga saat menghubungi TTE: ' . $e->getMessage()]);
-        }
-
-        // Nomor tujuan: dari data pengguna; saat cari via nohp, nomor yang diketik
-        // jadi fallback bila tabel TTE tidak menampilkan nomornya.
-        $phone = $user['phone'] ?: ($by === 'nohp' ? $value : null);
-
-        if (empty($phone)) {
-            return $this->panel('error', null, [
-                'Nomor HP tidak ditemukan pada data pengguna di TTE, sehingga kata sandi tidak bisa dikirim.',
-            ]);
-        }
-
-        $normalized = $this->maxchat->normalizeNumber($phone);
-
-        // Pastikan nomor tujuan berupa nomor seluler Indonesia yang wajar sebelum
-        // dikirim ke MaxChat — mencegah 503 "Error send message" dari nomor cacat
-        // (mis. hasil ekstraksi TTE yang tergabung dengan angka kolom lain).
-        if (preg_match('/^628[1-9]\d{7,10}$/', $normalized) !== 1) {
-            return $this->panel('error', null, [
-                'Nomor HP tujuan tidak valid: "' . $phone . '" (jadi ' . $normalized . '). '
-                . ($by === 'nohp'
-                    ? 'Periksa kembali nomor yang Anda masukkan.'
-                    : 'Nomor dari data pengguna di TTE tampak tidak wajar — gunakan opsi "No HP" untuk mengirim ke nomor yang benar.'),
-            ]);
         }
 
         $password = (new PasswordGenerator())->generate();
@@ -186,15 +213,23 @@ class ResetPassword extends BaseController
         $text = $this->parser->render($template['body'], $auto);
 
         $draft = [
-            'search_by'        => $by,
-            'search_value'     => $value,
-            // recipient_input pada riwayat memakai nomor mentah yang dipakai.
+            'search_by'    => $by,
+            'search_value' => $value,
+            // Tujuan pengiriman SELALU nomor yang diketik operator, tidak pernah
+            // nomor dari TTE: nomor di TTE bisa saja usang — justru itu sebab
+            // pencarian lewat nomor gagal dan operator memakai kolom cadangan.
+            'phone_typed'      => $phone,
             'phone_input'      => $phone,
             'phone_normalized' => $normalized,
+            // Nomor yang tercatat di TTE, untuk dibandingkan di panel.
+            'phone_tte'        => $user['phone'],
             'email'            => $user['email'],
             'name'             => $user['name'],
             'role'             => $user['role'],
             'change_url'       => $user['change_url'],
+            'edit_url'         => $user['edit_url'],
+            'wa_updated'       => false,
+            'wa_notes'         => [],
             'password'         => $password,
             'template_id'      => (int) $template['id'],
             'template_name'    => $template['name'],
@@ -205,12 +240,7 @@ class ResetPassword extends BaseController
         // memproses draft dengan id ini, jadi tab lain tak bisa menimpanya.
         $draftId = $this->drafts->create(self::DRAFT_KIND, $draft);
 
-        return $this->panel('preview', view(Module::VIEWS . 'reset/_panel_preview', [
-            'draft'       => $draft,
-            'draftId'     => $draftId,
-            'maxchat'     => $this->maxchat,
-            'nextAccount' => $this->dispatcher->peek(),
-        ]));
+        return $this->previewPanel($draft, $draftId);
     }
 
     /**
@@ -273,7 +303,7 @@ class ResetPassword extends BaseController
                     'body'      => $result['body'],
                     'error'     => $result['error'],
                     'account'   => $outcome['ok'] ? ($outcome['account']['name'] ?? null) : null,
-                    'failed'    => [],
+                    'failed'    => MaxChatDispatcher::failedAttempts($outcome),
                 ],
             ]));
         }
@@ -299,6 +329,128 @@ class ResetPassword extends BaseController
                 'text'      => $draft['text'],
                 'pending'   => $this->queue->pending(),
             ],
+        ]));
+    }
+
+    /**
+     * Bentuk-bentuk nomor yang dicoba pada kotak pencarian TTE.
+     *
+     * @return list<string>
+     *
+     * @see PhoneNumbers::variants() aturannya, dipakai bersama Reset Passphrase.
+     */
+    protected function phoneVariants(string $normalized): array
+    {
+        return PhoneNumbers::variants($normalized);
+    }
+
+    /**
+     * Tebak jenis isian kolom cadangan: NIK (angka saja) atau email (ada @).
+     *
+     * @return array{by: string, value: string}|array{error: string}
+     *
+     * @see SearchIdentifier::detect()
+     */
+    protected function detectFallback(string $raw): array
+    {
+        return SearchIdentifier::detect($raw);
+    }
+
+    /**
+     * Langkah antara opsional — perbarui nomor WhatsApp di TTE (AJAX).
+     *
+     * Draft dibaca TANPA diklaim: bila langkah ini gagal, preview yang sudah sah
+     * harus tetap utuh supaya operator bisa menekan "Lewati" dan melanjutkan.
+     * Kehilangan draft gara-gara langkah opsional adalah yang justru dihindari.
+     */
+    public function updateWhatsapp(): ResponseInterface|RedirectResponse
+    {
+        if (! $this->request->isAJAX()) {
+            return redirect()->to(module_url());
+        }
+
+        $draftId = (string) $this->request->getPost('draft_id');
+        $draft   = $this->drafts->peek(self::DRAFT_KIND, $draftId);
+
+        if ($draft === null) {
+            return $this->panel('error', null, [
+                'Draft sudah tidak berlaku (kedaluwarsa atau sudah diproses). Silakan ulangi pencarian.',
+            ]);
+        }
+
+        if (! empty($draft['wa_updated'])) {
+            return $this->previewPanel($draft, $draftId); // Idempoten.
+        }
+
+        if (empty($draft['edit_url'])) {
+            return $this->panel('error', null, [
+                'Tombol "ubah" tidak terbaca pada baris pengguna di TTE, jadi nomor tidak bisa diperbarui dari sini.',
+            ]);
+        }
+
+        $credential = $this->credentials->current();
+
+        if ($credential === null) {
+            return $this->panel('error', null, ['Kredensial TTE hilang. Isi ulang di menu Akun TTE.']);
+        }
+
+        try {
+            $scraper = new TteScraper(null, $credential['base_url'] ?? null);
+            $scraper->login($credential['username'], $this->credentials->plainPassword($credential));
+            $result = $scraper->updateWhatsapp(['edit_url' => $draft['edit_url']], $draft['phone_normalized']);
+        } catch (TteScraperException $e) {
+            return $this->panel('error', null, ['Gagal memperbarui nomor di TTE: ' . $e->getMessage()]);
+        } catch (Throwable $e) {
+            return $this->panel('error', null, ['Kesalahan tak terduga saat memperbarui nomor: ' . $e->getMessage()]);
+        }
+
+        $notes = TteUpdateReport::notes($result);
+
+        $draft['wa_updated'] = true;
+        $draft['phone_tte']  = $result['after'];
+        $draft['wa_notes']   = $notes;
+
+        if (! $this->drafts->updatePayload(self::DRAFT_KIND, $draftId, $draft)) {
+            return $this->panel('error', null, [
+                'Nomor di TTE sudah diperbarui, tetapi draft tidak bisa disimpan (mungkin sudah diproses tab lain). '
+                . 'Ulangi pencarian sebelum mereset kata sandi.',
+            ]);
+        }
+
+        return $this->previewPanel($draft, $draftId);
+    }
+
+    /**
+     * Apakah nomor di TTE sama dengan tujuan kirim?
+     *
+     * Dibandingkan sebagai nomor, bukan sebagai teks: TTE bisa menyimpan 08…
+     * sementara tujuan kirim selalu 62…, dan keduanya bisa saja nomor yang sama.
+     * Menganggapnya berbeda berarti menawarkan penulisan ke TTE yang sia-sia.
+     *
+     * @param array<string, mixed> $draft
+     */
+    protected function phoneMatchesTte(array $draft): bool
+    {
+        return PhoneNumbers::matches($draft['phone_tte'] ?? null, (string) $draft['phone_normalized']);
+    }
+
+    /**
+     * @param array<string, mixed> $draft
+     */
+    protected function previewPanel(array $draft, string $draftId): ResponseInterface
+    {
+        $matches = $this->phoneMatchesTte($draft);
+
+        return $this->panel('preview', view(Module::VIEWS . 'reset/_panel_preview', [
+            'draft'        => $draft,
+            'draftId'      => $draftId,
+            'maxchat'      => $this->maxchat,
+            'nextAccount'  => $this->dispatcher->peek(),
+            'phoneMatches' => $matches,
+            // Selama nomor berbeda dan masih bisa diperbarui, tombol Reset dikunci:
+            // Perbarui/Lewati harus jadi keputusan sadar sebelum langkah yang
+            // tidak bisa dibatalkan.
+            'needsWaDecision' => empty($draft['wa_updated']) && ! $matches && ! empty($draft['edit_url']),
         ]));
     }
 

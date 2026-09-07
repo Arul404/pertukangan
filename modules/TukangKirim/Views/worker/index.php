@@ -26,9 +26,7 @@
 
 <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
     <div>
-        <h1 class="h3 mb-1">Worker Antrean</h1>
-        <p class="text-muted mb-0">Pantau dan kelola pengiriman WhatsApp yang berjalan di latar
-            (satu-per-satu dengan jeda, agar tidak diblokir).</p>
+        <h1 class="h3 mb-0">Worker Antrean</h1>
     </div>
     <div class="d-flex flex-wrap align-items-center gap-2">
         <div class="form-check form-switch mb-0">
@@ -98,7 +96,7 @@
     </div>
 </div>
 
-<?php if (! $status['running']): ?>
+<div id="worker-off-alert" <?= $status['running'] ? 'hidden' : '' ?>>
     <div class="alert alert-warning d-flex align-items-start">
         <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
         <div>
@@ -109,7 +107,7 @@
             Untuk sekarang, Anda juga bisa menekan <em>Proses 1 sekarang</em> di bawah.
         </div>
     </div>
-<?php endif; ?>
+</div>
 
 <div class="row g-3">
     <!-- ===== Setelan ===== -->
@@ -158,7 +156,7 @@
             <div class="card-body d-flex flex-wrap gap-2 align-items-center">
                 <form method="post" action="<?= module_url('worker/start') ?>" class="d-inline">
                     <?= csrf_field() ?>
-                    <button class="btn btn-success btn-sm" type="submit" <?= $status['running'] ? 'disabled' : '' ?>>
+                    <button class="btn btn-success btn-sm" type="submit" id="btn-worker-start" <?= $status['running'] ? 'disabled' : '' ?>>
                         <i class="bi bi-play-fill me-1"></i> Nyalakan
                     </button>
                 </form>
@@ -168,7 +166,7 @@
                       data-confirm="Worker daemon akan keluar dengan rapi setelah pesan yang sedang berjalan selesai."
                       data-confirm-ok="Ya, Matikan" data-confirm-variant="danger">
                     <?= csrf_field() ?>
-                    <button class="btn btn-outline-danger btn-sm" type="submit" <?= $status['running'] ? '' : 'disabled' ?>>
+                    <button class="btn btn-outline-danger btn-sm" type="submit" id="btn-worker-stop" <?= $status['running'] ? '' : 'disabled' ?>>
                         <i class="bi bi-stop-fill me-1"></i> Matikan
                     </button>
                 </form>
@@ -185,7 +183,7 @@
         <div class="card shadow-sm">
             <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between">
                 <span><i class="bi bi-list-ol me-1"></i> Antrean menunggu</span>
-                <span class="badge text-bg-light border"><?= count($queued) ?> ditampilkan</span>
+                <span class="badge text-bg-light border"><span id="queue-count"><?= count($queued) ?></span> ditampilkan</span>
             </div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
@@ -198,39 +196,8 @@
                             <th class="text-end">Aksi</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <?php if ($queued === []): ?>
-                            <tr><td colspan="5" class="text-center text-muted py-4">Antrean kosong.</td></tr>
-                        <?php else: ?>
-                            <?php foreach ($queued as $q): ?>
-                                <tr>
-                                    <td><?= (int) $q['id'] ?></td>
-                                    <td><?= esc($q['recipient']) ?></td>
-                                    <td>
-                                        <span class="badge <?= $q['status'] === 'processing' ? 'text-bg-info' : 'text-bg-secondary' ?>">
-                                            <?= esc($q['status']) ?>
-                                        </span>
-                                    </td>
-                                    <td class="small text-muted"><?= esc($q['created_at']) ?></td>
-                                    <td class="text-end">
-                                        <?php if ($q['status'] === 'queued'): ?>
-                                            <form method="post" action="<?= module_url('worker/' . (int) $q['id'] . '/cancel') ?>"
-                                                  class="d-inline js-confirm"
-                                                  data-confirm-title="Batalkan pesan?"
-                                                  data-confirm="Pesan ini akan dihapus dari antrean dan tidak dikirim."
-                                                  data-confirm-ok="Ya, Batalkan" data-confirm-variant="danger">
-                                                <?= csrf_field() ?>
-                                                <button class="btn btn-outline-danger btn-sm" type="submit">
-                                                    <i class="bi bi-x-lg"></i>
-                                                </button>
-                                            </form>
-                                        <?php else: ?>
-                                            <span class="text-muted small">—</span>
-                                        <?php endif; ?>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
+                    <tbody id="queue-rows">
+                        <?= view(\Modules\TukangKirim\Config\Module::VIEWS . 'worker/_queue_rows', ['queued' => $queued, 'status' => $status]) ?>
                     </tbody>
                 </table>
             </div>
@@ -246,41 +213,6 @@
     const FLUSH_URL  = <?= json_encode(module_url('worker/flush')) ?>;
     const CSRF_NAME  = <?= json_encode(csrf_token()) ?>;
 
-    // ===== Auto-refresh: muat ulang halaman berkala agar daftar antrean yang
-    // sudah diproses langsung terlihat berkurang. Pilihan disimpan di browser.
-    (function () {
-        const AR_ON = 'tk_worker_ar_on';
-        const AR_IV = 'tk_worker_ar_iv';
-        const cb = document.getElementById('auto-refresh');
-        const sel = document.getElementById('auto-interval');
-        const cd = document.getElementById('refresh-countdown');
-        let timer = null;
-
-        const store = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
-        const load  = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
-
-        // Pulihkan pilihan tersimpan.
-        if (load(AR_ON) === '1') cb.checked = true;
-        if (load(AR_IV)) sel.value = load(AR_IV);
-
-        function schedule() {
-            clearInterval(timer);
-            if (!cb.checked) { cd.textContent = ''; return; }
-
-            let remain = parseInt(sel.value, 10) || 10;
-            cd.textContent = 'muat ulang dalam ' + remain + ' dtk';
-            timer = setInterval(() => {
-                remain -= 1;
-                if (remain <= 0) { clearInterval(timer); location.reload(); return; }
-                cd.textContent = 'muat ulang dalam ' + remain + ' dtk';
-            }, 1000);
-        }
-
-        cb.addEventListener('change', () => { store(AR_ON, cb.checked ? '1' : '0'); schedule(); });
-        sel.addEventListener('change', () => { store(AR_IV, sel.value); schedule(); });
-        schedule();
-    })();
-
     function fmtAge(s) {
         if (s === null || s === undefined) return '—';
         if (s < 60) return s + ' dtk';
@@ -288,10 +220,18 @@
         return Math.floor(s / 3600) + ' jam';
     }
 
-    // Polling status tiap 5 detik.
-    async function refreshStatus() {
+    /**
+     * Perbarui halaman di tempat — tidak pernah memuat ulang.
+     *
+     * withQueue=true ikut menarik daftar antrean yang sudah dirender server, jadi
+     * tabelnya tidak dibangun ulang di sisi klien (markup baris tetap satu versi,
+     * di worker/_queue_rows.php).
+     */
+    async function refreshStatus(withQueue = false) {
         try {
-            const r = await fetch(STATUS_URL, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            const r = await fetch(STATUS_URL + (withQueue ? '?queue=1' : ''), {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
             const d = await r.json();
 
             document.getElementById('st-running').innerHTML = d.running
@@ -304,9 +244,70 @@
                 : '<span class="badge text-bg-info">Berjalan</span>';
             document.getElementById('st-interval').textContent = d.min_interval + '–' + (d.min_interval + d.jitter);
             document.getElementById('st-last').textContent = d.last_sent_at || '—';
+
+            // Peringatan "worker tidak berjalan" dan tombol nyala/mati ikut status,
+            // supaya tidak basi saat worker dinyalakan/dimatikan dari terminal.
+            document.getElementById('worker-off-alert').hidden = d.running;
+            document.getElementById('btn-worker-start').disabled = d.running;
+            document.getElementById('btn-worker-stop').disabled = !d.running;
+
+            if (d.queued_html !== undefined) {
+                document.getElementById('queue-rows').innerHTML = d.queued_html;
+                document.getElementById('queue-count').textContent = d.queued_count;
+            }
         } catch (e) { /* diam saja saat gagal polling */ }
     }
-    setInterval(refreshStatus, 5000);
+
+    // ===== Auto-refresh: perbarui kartu status + tabel antrean di tempat, dengan
+    // jeda pilihan operator. Pilihan disimpan di browser.
+    //
+    // Tanpa auto-refresh, kartu status tetap diperbarui tiap 5 detik seperti
+    // sebelumnya; yang ditambahkan saklar ini adalah daftar antrean, yang dulu
+    // hanya ikut berubah kalau seluruh halaman dimuat ulang.
+    (function () {
+        const AR_ON = 'tk_worker_ar_on';
+        const AR_IV = 'tk_worker_ar_iv';
+        const cb = document.getElementById('auto-refresh');
+        const sel = document.getElementById('auto-interval');
+        const cd = document.getElementById('refresh-countdown');
+        let countdown = null;
+        let poll = null;
+
+        const store = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+        const load  = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+
+        // Pulihkan pilihan tersimpan.
+        if (load(AR_ON) === '1') cb.checked = true;
+        if (load(AR_IV)) sel.value = load(AR_IV);
+
+        function schedule() {
+            clearInterval(countdown);
+            clearInterval(poll);
+
+            if (!cb.checked) {
+                cd.textContent = '';
+                poll = setInterval(() => refreshStatus(false), 5000);
+
+                return;
+            }
+
+            const every = parseInt(sel.value, 10) || 10;
+            let remain = every;
+
+            cd.textContent = 'perbarui dalam ' + remain + ' dtk';
+            countdown = setInterval(() => {
+                remain -= 1;
+                if (remain <= 0) remain = every;
+                cd.textContent = 'perbarui dalam ' + remain + ' dtk';
+            }, 1000);
+
+            poll = setInterval(() => refreshStatus(true), every * 1000);
+        }
+
+        cb.addEventListener('change', () => { store(AR_ON, cb.checked ? '1' : '0'); schedule(); });
+        sel.addEventListener('change', () => { store(AR_IV, sel.value); schedule(); });
+        schedule();
+    })();
 
     // Proses 1 pesan sekarang (manual).
     const flushBtn = document.getElementById('btn-flush');
@@ -324,24 +325,34 @@
             const r = await fetch(FLUSH_URL, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body });
             const d = await r.json();
 
+            // Pesan tersangkut yang ikut dibereskan sebelum memproses.
+            const rec = d.recovered || { requeued: 0, abandoned: 0 };
+            const recNote = (rec.requeued || rec.abandoned)
+                ? '<div class="text-warning-emphasis"><i class="bi bi-arrow-counterclockwise me-1"></i>Pemulihan: '
+                    + rec.requeued + ' pesan tersangkut dikembalikan ke antrean, '
+                    + rec.abandoned + ' ditinggalkan.</div>'
+                : '';
+
             if (!d.ok) {
                 flushStatus.className = 'small mt-2 text-danger';
                 flushStatus.innerHTML = '<i class="bi bi-x-circle-fill me-1"></i>' + (d.error || 'Gagal.');
             } else if (d.summary === null) {
                 flushStatus.className = 'small mt-2 text-muted';
-                flushStatus.innerHTML = '<i class="bi bi-inbox me-1"></i>Antrean kosong.';
+                flushStatus.innerHTML = recNote + '<i class="bi bi-inbox me-1"></i>Antrean kosong.';
             } else {
                 const s = d.summary;
                 flushStatus.className = 'small mt-2 ' + (s.ok ? 'text-success' : 'text-danger');
-                flushStatus.innerHTML = (s.ok ? '<i class="bi bi-check-circle-fill me-1"></i>Terkirim' : '<i class="bi bi-x-circle-fill me-1"></i>Gagal')
-                    + ' ke ' + s.recipient + ' (' + s.status + '). Sisa antrean: ' + d.pending + '. Muat ulang untuk memperbarui daftar.';
+                flushStatus.innerHTML = recNote
+                    + (s.ok ? '<i class="bi bi-check-circle-fill me-1"></i>Terkirim' : '<i class="bi bi-x-circle-fill me-1"></i>Gagal')
+                    + ' ke ' + s.recipient + ' (' + s.status + '). Sisa antrean: ' + d.pending + '.';
             }
         } catch (e) {
             flushStatus.className = 'small mt-2 text-danger';
             flushStatus.innerHTML = '<i class="bi bi-x-circle-fill me-1"></i>' + e.message;
         } finally {
             flushBtn.disabled = false;
-            refreshStatus();
+            // Ikut menarik tabel: baris yang barusan diproses langsung hilang.
+            refreshStatus(true);
         }
     });
 </script>

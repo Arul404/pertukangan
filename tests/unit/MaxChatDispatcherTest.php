@@ -150,6 +150,29 @@ final class MaxChatDispatcherTest extends CIUnitTestCase
         $this->assertSame([], $service->calls);
     }
 
+    public function testFailedAttemptsHanyaMendaftarPercobaanYangGagal(): void
+    {
+        [$dispatcher] = $this->dispatcher($this->twoAccounts(), [false, true]);
+
+        $outcome = $dispatcher->send('628123456789', 'Halo');
+        $failed  = MaxChatDispatcher::failedAttempts($outcome);
+
+        $this->assertCount(1, $failed);
+        $this->assertSame('Satu', $failed[0]['account']);
+        $this->assertStringContainsString('HTTP 401', $failed[0]['error']);
+    }
+
+    public function testFailedAttemptsKosongSaatTidakAdaAkunSamaSekali(): void
+    {
+        [$dispatcher] = $this->dispatcher([], [true]);
+
+        $outcome = $dispatcher->send('628123456789', 'Halo');
+
+        // Tanpa akun, tak ada percobaan yang bisa didaftar — sebabnya sudah
+        // tersampaikan lewat pesan galat di panel.
+        $this->assertSame([], MaxChatDispatcher::failedAttempts($outcome));
+    }
+
     public function testTesKoneksiTidakMenggeserGiliranRotasi(): void
     {
         [$dispatcher, $model] = $this->dispatcher($this->twoAccounts(), [true]);

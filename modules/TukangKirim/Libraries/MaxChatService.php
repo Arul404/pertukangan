@@ -151,6 +151,22 @@ class MaxChatService
     }
 
     /**
+     * Normalisasi sekaligus pastikan hasilnya nomor seluler Indonesia yang wajar.
+     *
+     * Mengembalikan null bila tidak lolos — mencegah MaxChat membalas 503 "Error
+     * send message" gara-gara nomor cacat (mis. hasil ekstraksi tabel TTE yang
+     * tergabung dengan angka kolom sebelah). Polanya dibangun dari countryCode
+     * supaya aturan ini tetap menempel pada normaliser yang jadi sandarannya.
+     */
+    public function normalizedMobile(string $input): ?string
+    {
+        $normalized = $this->normalizeNumber($input);
+        $pattern    = '/^' . preg_quote($this->config->countryCode, '/') . '8[1-9]\d{7,10}$/';
+
+        return preg_match($pattern, $normalized) === 1 ? $normalized : null;
+    }
+
+    /**
      * @return array{status: string, ok: bool, http_code: null, body: null, error: string}
      */
     protected function failure(string $message): array

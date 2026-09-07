@@ -26,6 +26,8 @@
     </div>
 </div>
 
+<?= $this->include(Modules\TukangAdmin\Config\Module::VIEWS . 'reset/_card_phone') ?>
+
 <div class="card border-success shadow-sm mb-3">
     <div class="card-header bg-success-subtle fw-semibold">
         <i class="bi bi-shield-lock-fill me-1"></i> Kata sandi baru yang dibuat
@@ -53,14 +55,11 @@
     <div class="card-body">
         <dl class="row mb-3 small">
             <?php $byLabels = ['email' => 'Email', 'nik' => 'NIK', 'nohp' => 'No HP']; ?>
-            <dt class="col-4 text-muted fw-normal">Dicari via</dt>
+            <dt class="col-4 text-muted fw-normal">Ditemukan via</dt>
             <dd class="col-8">
-                <span class="badge text-bg-secondary"><?= esc($byLabels[$draft['search_by'] ?? 'email'] ?? 'Email') ?></span>
+                <span class="badge text-bg-secondary"><?= esc($byLabels[$draft['search_by'] ?? 'nohp'] ?? 'No HP') ?></span>
                 <?= esc($draft['search_value'] ?? '') ?>
             </dd>
-
-            <dt class="col-4 text-muted fw-normal">Nomor ditemukan</dt>
-            <dd class="col-8"><?= esc($draft['phone_input']) ?></dd>
 
             <dt class="col-4 text-muted fw-normal">Dikirim ke</dt>
             <dd class="col-8 mb-0">
@@ -77,6 +76,7 @@
 
 <div class="d-grid mb-3">
     <button type="button" id="btn-dispatch" data-draft-id="<?= esc($draftId ?? '', 'attr') ?>"
+            <?= $needsWaDecision ? 'disabled data-needs-wa-decision="1"' : '' ?>
             class="btn btn-lg <?= $maxchat->isDryRun() ? 'btn-warning' : 'btn-danger' ?>"
             data-confirm-title="Reset kata sandi sekarang?"
             data-confirm="<?= $maxchat->isDryRun()

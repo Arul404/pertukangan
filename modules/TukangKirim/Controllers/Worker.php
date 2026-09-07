@@ -47,10 +47,33 @@ class Worker extends BaseController
         ]);
     }
 
-    /** Status ringkas untuk polling (AJAX). */
+    /**
+     * Status ringkas untuk polling (AJAX).
+     *
+     * Dengan `?queue=1` ikut mengirim daftar antrean yang sudah dirender server
+     * (partial worker/_queue_rows). Itu yang membuat auto-refresh cukup
+     * memperbarui tabelnya saja, bukan memuat ulang seluruh halaman — dan markup
+     * barisnya tetap hidup di satu berkas, jadi tak bisa melenceng dari versi
+     * yang dirender saat halaman pertama dibuka.
+     */
     public function status(): ResponseInterface
     {
-        return $this->response->setJSON($this->snapshot(config(MaxChatConfig::class)) + ['csrf' => csrf_hash()]);
+        $snapshot = $this->snapshot(config(MaxChatConfig::class));
+        $extra    = [];
+
+        if ($this->request->getGet('queue') !== null) {
+            $queued = $this->queuedList();
+
+            $extra = [
+                'queued_html'  => view(Module::VIEWS . 'worker/_queue_rows', [
+                    'queued' => $queued,
+                    'status' => $snapshot,
+                ]),
+                'queued_count' => count($queued),
+            ];
+        }
+
+        return $this->response->setJSON($snapshot + $extra + ['csrf' => csrf_hash()]);
     }
 
     /** Simpan jeda/lanjut + setelan jeda antar-kirim. */
@@ -149,11 +172,18 @@ class Worker extends BaseController
             ]);
         }
 
-        $summary = null;
-        $error   = null;
+        $summary   = null;
+        $recovered = ['requeued' => 0, 'abandoned' => 0];
+        $error     = null;
 
         try {
-            $summary = (new SendQueueService())->processOne();
+            $service = new SendQueueService();
+
+            // Kunci di tangan = tidak ada yang sedang mengirim, jadi sisa baris
+            // `processing` pasti yatim. Bereskan dulu supaya pesan yang tersangkut
+            // ikut terproses dalam klik yang sama.
+            $recovered = $service->reclaimOrphans();
+            $summary   = $service->processOne();
         } catch (Throwable $e) {
             $error = $e->getMessage();
         } finally {
@@ -165,26 +195,52 @@ class Worker extends BaseController
         }
 
         return $this->response->setJSON([
-            'ok'      => true,
-            'summary' => $summary,             // null bila antrean kosong
-            'pending' => $this->queue->pendingCount(),
-            'csrf'    => csrf_hash(),
+            'ok'        => true,
+            'summary'   => $summary,             // null bila antrean kosong
+            'recovered' => $recovered,           // baris yatim yang dipulihkan/ditinggalkan
+            'pending'   => $this->queue->pendingCount(),
+            'csrf'      => csrf_hash(),
         ]);
     }
 
-    /** Batalkan satu pesan yang masih menunggu di antrean. */
+    /**
+     * Batalkan satu pesan dari antrean.
+     *
+     * Baris `processing` hanya boleh dibatalkan saat worker mati: itu pasti sisa
+     * proses yang terputus. Bila worker hidup, baris itu mungkin sedang benar-
+     * benar dikirim — menghapusnya akan memotong jejak auditnya di tengah jalan.
+     */
     public function cancel(int $id): RedirectResponse
     {
         $row = $this->queue->find($id);
 
-        if ($row !== null && $row['status'] === 'queued') {
+        if ($row === null) {
+            return redirect()->to(module_url('worker'))
+                ->with('errors', ['Pesan tidak ditemukan — mungkin sudah selesai diproses.']);
+        }
+
+        if ($row['status'] === 'queued') {
             $this->queue->delete($id);
 
             return redirect()->to(module_url('worker'))->with('success', 'Pesan dibatalkan dari antrean.');
         }
 
+        if ($row['status'] === 'processing') {
+            if ($this->isRunning()) {
+                return redirect()->to(module_url('worker'))->with('errors', [
+                    'Pesan ini sedang diproses worker. Hentikan worker lebih dulu bila memang ingin membatalkannya.',
+                ]);
+            }
+
+            $this->queue->delete($id);
+
+            return redirect()->to(module_url('worker'))->with('success',
+                'Pesan tersangkut dibatalkan. Pesan itu sisa worker yang berhenti di tengah pengiriman, '
+                . 'jadi belum tentu benar-benar gagal terkirim — periksa Riwayat Kirim bila perlu.');
+        }
+
         return redirect()->to(module_url('worker'))
-            ->with('errors', ['Pesan tidak dapat dibatalkan (sudah diproses atau tidak ada).']);
+            ->with('errors', ['Pesan tidak dapat dibatalkan (status: ' . $row['status'] . ').']);
     }
 
     // ---------------------------------------------------------------------
@@ -221,10 +277,17 @@ class Worker extends BaseController
         return true; // dipegang proses lain = worker aktif.
     }
 
-    /** Umur (detik) pesan tertua yang masih menunggu. */
+    /**
+     * Umur (detik) pesan tertua yang masih menunggu.
+     *
+     * Memakai himpunan status yang sama dengan pendingCount(): baris `processing`
+     * yang tersangkut ikut dihitung, supaya kartu "Menunggu" tidak menampilkan
+     * angka sementara kartu "Tertua" kosong — persis gejala yang dulu membuat
+     * baris yatim tak terlihat.
+     */
     protected function oldestQueuedAge(): ?int
     {
-        $row = $this->queue->where('status', 'queued')->orderBy('id', 'ASC')->first();
+        $row = $this->queue->whereIn('status', ['queued', 'processing'])->orderBy('id', 'ASC')->first();
 
         if ($row === null || empty($row['created_at'])) {
             return null;

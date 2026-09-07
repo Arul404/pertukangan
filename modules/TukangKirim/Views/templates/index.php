@@ -4,8 +4,7 @@
 
 <div class="d-flex align-items-center justify-content-between mb-3">
     <div>
-        <h1 class="h3 mb-1">Template Pesan</h1>
-        <p class="text-muted mb-0">Isi pesan siap pakai beserta placeholdernya.</p>
+        <h1 class="h3 mb-0">Template Pesan</h1>
     </div>
     <a href="<?= module_url('templates/create') ?>" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> Template Baru</a>
 </div>

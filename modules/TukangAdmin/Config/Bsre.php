@@ -53,9 +53,9 @@ class Bsre extends BaseConfig
     /**
      * Parameter pencarian yang didukung → key filter pada body {@see $userListPath}.
      *
-     * Setara pilihan "Cari data berdasarkan" di portal (Email atau NIK). Nilai
-     * pencarian selalu ikut dikirim sebagai `search` (free-text) agar tetap
-     * ketemu meski key filter berubah; bila key filter server berbeda, cukup
+     * Setara pilihan "Cari data berdasarkan" di portal (Email atau NIK). Kedua key
+     * di bawah DIREKAM dari portal: ia mengirim `search` KOSONG dan menaruh
+     * nilainya hanya di `filters`. Bila suatu saat key filternya berubah, cukup
      * sesuaikan di sini (mis. lewat `.env`: `bsre.searchParams.nik = 'nomorNik'`).
      *
      * @var array<string, string>
@@ -76,6 +76,64 @@ class Bsre extends BaseConfig
      */
     public string $passphraseResetPath = '/api/rest/manage/cert/passphrase/';
 
+    // -----------------------------------------------------------------------
+    // Ubah data akun & persetujuannya
+    //
+    // Alur manual di portal: tab "Ubah Akun" -> kolom Nomor Handphone -> Simpan,
+    // lalu perubahan itu HARUS disetujui di /app/users/update/list (cari user ->
+    // Detail -> Verifikasi) sebelum berlaku. Path di bawah adalah panggilan API di
+    // balik langkah-langkah itu, DIREKAM dari portal (HAR) — bukan tebakan.
+    //
+    // Catatan dari rekaman: klik "Detail" pada daftar perubahan tidak memanggil
+    // API sama sekali (barisnya sudah memuat semua), jadi tidak ada
+    // "updateDetailsPath" di sini.
+    // -----------------------------------------------------------------------
+
+    /**
+     * Endpoint simpan perubahan data pengguna (POST). Diakhiri dengan uid.
+     */
+    public string $userUpdatePath = '/api/rest/manage/user/edit/';
+
+    /**
+     * Endpoint daftar permintaan perubahan (POST), setara /app/users/update/list.
+     * Body-nya sebentuk dengan {@see self::$userListPath}.
+     */
+    public string $updateListPath = '/api/rest/manage/verify/user/update';
+
+    /**
+     * Endpoint persetujuan permintaan perubahan (POST).
+     *
+     * Body: {id, approve, message}. `id` adalah uid PENGGUNA — daftar perubahan
+     * tidak memakai id permintaan tersendiri — dan `approve` dikirim portal
+     * sebagai string "true", bukan boolean.
+     */
+    public string $updateVerifyPath = '/api/rest/manage/verify/user/approval';
+
+    /**
+     * Pesan yang menyertai persetujuan, sebagaimana dikirim portal.
+     */
+    public string $approvalMessage = 'Data terverifikasi';
+
+    /**
+     * Nama kolom "Nomor Handphone" pada profil BSrE.
+     */
+    public string $profilePhoneField = 'phone';
+
+    /**
+     * Kolom yang ikut dikirim saat menyimpan perubahan data akun.
+     *
+     * Portal TIDAK memantulkan seluruh profil — ia mengirim tepat kolom-kolom ini
+     * dan tidak lebih. Menyertakan kolom lain (status, role, certificateStatus,
+     * linkAktif, …) berarti mengirim sesuatu yang portal sendiri tak pernah
+     * kirim, pada permintaan yang menulis data pengguna.
+     *
+     * Ditulis sebagai string dipisah koma, bukan array, karena
+     * BaseConfig::initEnvValue() hanya menimpa kunci array yang SUDAH ada — lewat
+     * .env sebuah array tidak bisa ditambah isinya.
+     */
+    public string $profileEditFields = 'ktpId,fotoId,videoId,nik,nip,emailAddress,nama,phone,'
+        . 'provinsi,jabatanOrganisasi,organisasi,organisasiUnit';
+
     /**
      * Endpoint verifikasi nomor HP pengguna (POST). Body: {phone, uid}.
      * Memicu BSrE mengirim tautan verifikasi ke WhatsApp pengguna.
@@ -89,7 +147,11 @@ class Bsre extends BaseConfig
 
     /**
      * Nilai header X-USER-IP yang wajib disertakan tiap panggilan /api/rest.
-     * SPA mengisinya dari IP publik; untuk pemakaian server cukup localhost.
+     *
+     * SPA mengisinya dengan IP publik operator; untuk pemakaian server localhost
+     * terbukti diterima, termasuk pada permintaan yang menulis data. Bila suatu
+     * saat operasi tulis ditolak tanpa sebab jelas, inilah tombol pertama yang
+     * dicoba.
      */
     public string $userIp = '127.0.0.1';
 

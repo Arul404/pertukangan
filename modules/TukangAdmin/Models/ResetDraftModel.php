@@ -83,6 +83,64 @@ class ResetDraftModel extends Model
         return is_array($payload) ? $payload : null;
     }
 
+    /**
+     * Baca payload TANPA menandai terpakai.
+     *
+     * Untuk langkah antara yang boleh diulang — mis. memperbarui nomor WhatsApp
+     * di TTE — klaim sekali-pakai justru merugikan: kegagalan langkah opsional
+     * itu akan menghanguskan draft reset yang masih sah dan memaksa pencarian
+     * ulang (login TTE lagi, kata sandi baru lagi). Jaminan sekali-pakai tetap
+     * dipegang {@see self::claim()} untuk langkah terakhir yang benar-benar
+     * mengubah kata sandi.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function peek(string $kind, string $id): ?array
+    {
+        if ($id === '') {
+            return null;
+        }
+
+        $row = $this->where('id', $id)->where('kind', $kind)->first();
+
+        if ($row === null || $row['used_at'] !== null) {
+            return null;
+        }
+
+        if (strtotime((string) $row['created_at']) < time() - self::TTL) {
+            return null;
+        }
+
+        $payload = json_decode((string) $row['payload'], true);
+
+        return is_array($payload) ? $payload : null;
+    }
+
+    /**
+     * Perbarui payload draft yang BELUM terpakai.
+     *
+     * Penjaga `used_at IS NULL` memastikan draft yang sudah diklaim tidak bisa
+     * dihidupkan kembali lewat pintu belakang ini.
+     *
+     * @param array<string, mixed> $payload
+     *
+     * @return bool false bila draft hilang, kedaluwarsa, atau sudah diklaim
+     */
+    public function updatePayload(string $kind, string $id, array $payload): bool
+    {
+        if ($id === '') {
+            return false;
+        }
+
+        $this->builder()
+            ->where('id', $id)
+            ->where('kind', $kind)
+            ->where('used_at', null)
+            ->update(['payload' => json_encode($payload)]);
+
+        return $this->db->affectedRows() === 1;
+    }
+
     /** Buang draft yang sudah terpakai atau kedaluwarsa agar tabel tetap kecil. */
     public function purgeExpired(): void
     {

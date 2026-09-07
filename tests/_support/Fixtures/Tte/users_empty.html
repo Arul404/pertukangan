@@ -1,0 +1,38 @@
+<!--
+  Halaman /users?q=... saat pencarian tidak menemukan apa pun.
+  Yang penting dan disalin apa adanya: <tbody> BENAR-BENAR KOSONG (bukan baris
+  "Tidak ada data"), dan blok paginasi juga kosong. Karena itu tableRows()
+  mengembalikan [] dan pesan galatnya yang bersih ("Tidak ada pengguna yang
+  cocok"), bukan pesan role.
+-->
+<div class="card">
+  <div class="card-header">
+    <form class="" action="https://tte.magelangkab.go.id/users" method="get">
+      <input class="form-control" type="text" value="888888" name="q" placeholder="Masukan kata kunci..">
+    </form>
+  </div>
+  <div class="card-body table-responsive p-0">
+    <table id="example2" class="table table-bordered table-hover table-responsive">
+      <thead>
+        <tr>
+          <th class="text-center">#</th>
+          <th>NIK</th>
+          <th>NAMA</th>
+          <th>WHATSAPP</th>
+          <th>EMAIL</th>
+          <th>SKPD</th>
+          <th>ROLE</th>
+          <th>KETERANGAN</th>
+          <th>STATUS</th>
+          <th class="text-center">Opsi</th>
+        </tr>
+      </thead>
+      <tbody>
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer clearfix">
+    <ul class="pagination pagination-sm m-0 float-right">
+    </ul>
+  </div>
+</div>

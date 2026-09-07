@@ -44,6 +44,31 @@ final class MaxChatServiceTest extends CIUnitTestCase
     }
 
     /**
+     * @dataProvider nomorSelulerProvider
+     */
+    public function testNomorSelulerYangSah(string $input, ?string $expected): void
+    {
+        $this->assertSame($expected, $this->service()->normalizedMobile($input));
+    }
+
+    public static function nomorSelulerProvider(): array
+    {
+        return [
+            'lokal 0'            => ['08123456789', '628123456789'],
+            'plus 62'            => ['+628123456789', '628123456789'],
+            'berformat'          => ['0812-3456-789', '628123456789'],
+            'panjang maksimum'   => ['081234567890123', null],
+            'kosong'             => ['', null],
+            // Awalan 80 bukan nomor seluler; ini yang menjaring hasil ekstraksi
+            // tabel TTE yang tergabung dengan angka kolom sebelah.
+            'awalan 80'          => ['08023456789', null],
+            'terlalu pendek'     => ['0812345', null],
+            'NIK 16 digit'       => ['3371022303750001', null],
+            'nomor tergabung'    => ['08136411840003', null],
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function account(string $baseUrl, string $token = 'token-uji-1234'): array

@@ -3,8 +3,7 @@
 <?= $this->section('content') ?>
 
 <div class="mb-4">
-    <h1 class="h3 mb-1">Pertukangan</h1>
-    <p class="text-muted mb-0">Pilih modul yang mau dipakai.</p>
+    <h1 class="h3 mb-0">Pertukangan</h1>
 </div>
 
 <?php if ($modules === []): ?>

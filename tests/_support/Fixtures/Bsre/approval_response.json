@@ -1,0 +1,13 @@
+{
+  "success": true,
+  "message": "Approval User Berhasil",
+  "data": {
+    "id": "da48751e-361d-4bc8-9938-0f27ce0f1e71",
+    "approve": true,
+    "message": "Data terverifikasi",
+    "verifikator_kepegawaian": false,
+    "tahap": "VERIFIKATOR",
+    "approvalBy": "FAHRUR RAJI",
+    "ticket": null
+  }
+}

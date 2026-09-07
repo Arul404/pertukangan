@@ -16,8 +16,7 @@
     <div class="col-xxl-10">
         <div class="d-flex align-items-start justify-content-between gap-2 mb-3">
             <div>
-                <h1 class="h3 mb-1">Akun BSrE</h1>
-                <p class="text-muted mb-0">Kredensial untuk masuk ke <?= esc($baseUrl) ?> (lewat SSO) saat reset passphrase.</p>
+                <h1 class="h3 mb-0">Akun BSrE</h1>
             </div>
             <span class="badge align-self-center <?= $connected ? 'text-bg-success' : 'text-bg-secondary' ?>" id="conn-badge">
                 <i class="bi <?= $connected ? 'bi-plug-fill' : 'bi-plug' ?> me-1"></i>

@@ -13,9 +13,7 @@
 
 <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
     <div>
-        <h1 class="h3 mb-1">Reset Password TTE</h1>
-        <p class="text-muted mb-0">Cari penandatangan berdasarkan email, NIK, atau nomor HP. Sistem menemukan akunnya
-            di TTE, mereset kata sandinya, lalu mengirimkannya lewat WhatsApp ke nomor HP dari data pengguna.</p>
+        <h1 class="h3 mb-0">Reset Password TTE</h1>
     </div>
     <a href="<?= module_url('akun') ?>" class="btn btn-outline-secondary">
         <i class="bi bi-person-gear me-1"></i> Akun TTE
@@ -56,24 +54,24 @@
                 <?= csrf_field() ?>
                 <div class="card-body">
                     <div class="mb-3">
-                        <label class="form-label fw-semibold" for="by">Cari berdasarkan</label>
-                        <select class="form-select" id="by" name="by" <?= $hasCredential ? '' : 'disabled' ?>>
-                            <option value="email" selected>Email</option>
-                            <option value="nik">NIK</option>
-                            <option value="nohp">No HP</option>
-                        </select>
+                        <label class="form-label fw-semibold" for="phone">
+                            No HP <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" class="form-control form-control-lg" id="phone" name="phone"
+                               inputmode="tel" placeholder="08123456789" autocomplete="off" required autofocus
+                               <?= $hasCredential ? '' : 'disabled' ?>>
+                        <div class="form-text">
+                            Nomor tujuan WhatsApp, sekaligus dipakai mencari akun di TTE.
+                            Nomor ini tetap jadi tujuan pengiriman walau nanti dicari lewat NIK/email.
+                        </div>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold" for="value">
-                            <span id="value-label">Email</span> <span class="text-danger">*</span>
-                        </label>
-                        <input type="text" class="form-control form-control-lg" id="value" name="value"
-                               inputmode="email" placeholder="nama@instansi.go.id" autocomplete="off" required
-                               <?= $hasCredential ? '' : 'disabled' ?>>
-                        <div class="form-text" id="value-help">
-                            Dipakai untuk mencari akun di TTE. Nomor HP tujuan WhatsApp diambil otomatis
-                            dari data pengguna yang ditemukan.
+                    <div class="mb-3" id="fallback-wrap" hidden>
+                        <label class="form-label fw-semibold" for="fallback">NIK atau Email</label>
+                        <input type="text" class="form-control" id="fallback" name="fallback"
+                               placeholder="16 digit NIK atau nama@instansi.go.id" autocomplete="off">
+                        <div class="form-text" id="fallback-hint">
+                            Dipakai hanya untuk menemukan akunnya di TTE. Jenisnya dikenali otomatis.
                         </div>
                     </div>
 
@@ -116,10 +114,11 @@
                             <div class="d-flex gap-3 mb-3">
                                 <span class="step-num">1</span>
                                 <div>
-                                    <div class="fw-semibold">Cari akun</div>
+                                    <div class="fw-semibold">Cari lewat No HP</div>
                                     <div class="text-muted small">
                                         Sistem login ke TTE dan mencari akun <strong>penandatangan</strong>
-                                        yang cocok dengan email, NIK, atau nomor HP, lalu mengambil email dan nomor HP-nya.
+                                        dengan nomor itu. Bila tidak ada yang cocok, kolom NIK/Email muncul
+                                        sebagai jalan lain untuk menemukan akunnya.
                                     </div>
                                 </div>
                             </div>
@@ -127,26 +126,44 @@
                             <div class="d-flex gap-3 mb-3">
                                 <span class="step-num">2</span>
                                 <div>
+                                    <div class="fw-semibold">Verifikasi nomor</div>
+                                    <div class="text-muted small">
+                                        Nomor yang Anda ketik dibandingkan dengan yang tercatat di TTE.
+                                        Bila berbeda, Anda bisa <strong>memperbarui</strong> data di TTE atau
+                                        <strong>melewatinya</strong> — pilihan ini tidak mengubah tujuan pengiriman.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex gap-3 mb-3">
+                                <span class="step-num">3</span>
+                                <div>
                                     <div class="fw-semibold">Konfirmasi</div>
                                     <div class="text-muted small">
-                                        Email yang ditemukan dan kata sandi baru yang dibuat otomatis
+                                        Akun yang ditemukan dan kata sandi baru yang dibuat otomatis
                                         ditampilkan di sini untuk Anda periksa. Belum ada yang diubah.
                                     </div>
                                 </div>
                             </div>
 
                             <div class="d-flex gap-3">
-                                <span class="step-num">3</span>
+                                <span class="step-num">4</span>
                                 <div>
                                     <div class="fw-semibold">Reset &amp; kirim</div>
                                     <div class="text-muted small">
                                         Baru setelah Anda menekan tombolnya, kata sandi TTE diganti dan
-                                        dikirim ke nomor HP lewat WhatsApp.
+                                        dikirim lewat WhatsApp.
                                     </div>
                                 </div>
                             </div>
 
                             <div class="note-box mt-3">
+                                <i class="bi bi-send-check me-1"></i>
+                                Pesan selalu dikirim ke <strong>nomor yang Anda masukkan</strong>, bukan ke
+                                nomor yang tercatat di TTE — karena nomor di TTE bisa saja sudah usang.
+                            </div>
+
+                            <div class="note-box mt-2">
                                 <i class="bi bi-shield-check me-1"></i>
                                 Kata sandi dibuat otomatis, ditampilkan sekali, dan tidak pernah disimpan
                                 dalam bentuk asli di database.
@@ -166,52 +183,24 @@
 
 <?= $this->section('scripts') ?>
 <script>
-    const CSRF_NAME    = <?= json_encode(csrf_token()) ?>;
-    const DISPATCH_URL = <?= json_encode(module_url('reset/dispatch')) ?>;
+    const CSRF_NAME     = <?= json_encode(csrf_token()) ?>;
+    const DISPATCH_URL  = <?= json_encode(module_url('reset/dispatch')) ?>;
+    const UPDATE_WA_URL = <?= json_encode(module_url('reset/update-wa')) ?>;
 
     const form        = document.getElementById('reset-form');
     const searchBtn   = document.getElementById('btn-search');
     const errorBox    = document.getElementById('form-errors');
     const panelIdle   = document.getElementById('panel-idle');
     const panelServer = document.getElementById('panel-server');
-    const valueInput  = document.getElementById('value');
-    const bySelect    = document.getElementById('by');
-    const valueLabel  = document.getElementById('value-label');
-    const valueHelp   = document.getElementById('value-help');
+    const phoneInput    = document.getElementById('phone');
+    const fallbackWrap  = document.getElementById('fallback-wrap');
+    const fallbackInput = document.getElementById('fallback');
+    const fallbackHint  = document.getElementById('fallback-hint');
 
-    // Sesuaikan label/placeholder input mengikuti parameter pencarian terpilih.
-    if (bySelect) {
-        const presets = {
-            email: {
-                label: 'Email',
-                placeholder: 'nama@instansi.go.id',
-                inputmode: 'email',
-                help: 'Dipakai untuk mencari akun di TTE. Nomor HP tujuan WhatsApp diambil otomatis dari data pengguna yang ditemukan.',
-            },
-            nik: {
-                label: 'NIK',
-                placeholder: '16 digit NIK',
-                inputmode: 'numeric',
-                help: 'Dipakai untuk mencari akun di TTE bila email lupa. Nomor HP tujuan WhatsApp diambil otomatis dari data pengguna yang ditemukan.',
-            },
-            nohp: {
-                label: 'No HP',
-                placeholder: '08123456789',
-                inputmode: 'tel',
-                help: 'Nomor ini dipakai untuk mencari akun sekaligus tujuan WhatsApp (nomor dari data pengguna dipakai bila tersedia).',
-            },
-        };
-
-        bySelect.addEventListener('change', () => {
-            const p = presets[bySelect.value] || presets.email;
-            valueLabel.textContent = p.label;
-            valueInput.placeholder = p.placeholder;
-            valueInput.setAttribute('inputmode', p.inputmode);
-            valueHelp.textContent = p.help;
-            valueInput.value = '';
-            valueInput.focus();
-        });
-    }
+    // Tanpa template aktif, blok form tidak dirender sama sekali (lihat penjaga
+    // $templates === [] di atas) — tanpa penjaga ini seluruh skrip halaman mati
+    // oleh TypeError pada baris pertama yang menyentuh form.
+    if (form) {
 
     function showIdle() {
         panelServer.hidden = true;
@@ -276,6 +265,38 @@
         return data;
     }
 
+    function csrfValue() {
+        return form.querySelector('input[name="' + CSRF_NAME + '"]').value;
+    }
+
+    // Kolom cadangan hanya muncul setelah pencarian lewat nomor gagal.
+    function showFallback(on) {
+        fallbackWrap.hidden = !on;
+        searchBtn.innerHTML = on
+            ? '<i class="bi bi-search me-1"></i> Cari dengan NIK/Email'
+            : '<i class="bi bi-search me-1"></i> Cari Akun';
+
+        if (!on) {
+            fallbackInput.value = '';
+            fallbackHint.textContent = 'Dipakai hanya untuk menemukan akunnya di TTE. Jenisnya dikenali otomatis.';
+        }
+    }
+
+    // Petunjuk hidup saja; jenis sebenarnya ditentukan server.
+    fallbackInput.addEventListener('input', () => {
+        const v = fallbackInput.value.trim();
+
+        if (v === '') {
+            fallbackHint.textContent = 'Dipakai hanya untuk menemukan akunnya di TTE. Jenisnya dikenali otomatis.';
+        } else if (v.includes('@')) {
+            fallbackHint.textContent = 'Terdeteksi: Email';
+        } else if (/^\d{6,20}$/.test(v.replace(/[\s.\-]/g, ''))) {
+            fallbackHint.textContent = 'Terdeteksi: NIK';
+        } else {
+            fallbackHint.textContent = 'Belum dikenali — NIK hanya angka, email mengandung @.';
+        }
+    });
+
     // Langkah 1: cari akun & susun draft.
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -287,6 +308,10 @@
 
             if (data.state === 'preview') {
                 showServerPanel(data.html, 'preview');
+            } else if (data.state === 'notfound') {
+                showServerPanel(data.html, 'notfound');
+                showFallback(true);
+                fallbackInput.focus();
             } else {
                 showErrors(data.errors.length ? data.errors : ['Pencarian gagal.']);
                 showIdle();
@@ -300,6 +325,58 @@
 
     // Langkah 2 dan tombol lain di dalam panel server (delegasi).
     panelServer.addEventListener('click', async (event) => {
+        // --- Perbarui nomor WhatsApp di TTE (langkah antara, opsional) ---
+        const waBtn = event.target.closest('#btn-update-wa');
+
+        if (waBtn) {
+            if (!await confirmAction(confirmOptionsOf(waBtn))) return;
+
+            clearErrors();
+            busy(waBtn, true, 'Memperbarui…');
+
+            const body = new FormData();
+            body.append(CSRF_NAME, csrfValue());
+            body.append('draft_id', waBtn.dataset.draftId || '');
+
+            try {
+                const data = await postJson(UPDATE_WA_URL, body);
+
+                if (data.state === 'preview') {
+                    showServerPanel(data.html, 'preview');
+                } else {
+                    // Draft sengaja TIDAK diklaim di langkah ini, jadi preview
+                    // masih sah: jangan buang panelnya — operator masih bisa
+                    // menekan Lewati dan melanjutkan reset.
+                    showErrors(data.errors.length ? data.errors : ['Gagal memperbarui nomor.']);
+                    busy(waBtn, false);
+                }
+            } catch (error) {
+                showErrors(['Gagal menghubungi server: ' + error.message]);
+                busy(waBtn, false);
+            }
+
+            return;
+        }
+
+        // --- Lewati: murni sisi klien, tujuan kirim memang tidak berubah ---
+        if (event.target.closest('#btn-skip-wa')) {
+            const decision = panelServer.querySelector('[data-wa-decision]');
+            const skipped  = panelServer.querySelector('[data-wa-skipped]');
+            const dispatch = panelServer.querySelector('#btn-dispatch');
+
+            if (decision) decision.hidden = true;
+            if (skipped) skipped.hidden = false;
+            if (dispatch) dispatch.disabled = false;
+
+            return;
+        }
+
+        if (event.target.closest('#btn-focus-fallback')) {
+            fallbackInput.focus();
+
+            return;
+        }
+
         const doBtn = event.target.closest('#btn-dispatch');
 
         if (doBtn) {
@@ -309,7 +386,7 @@
             busy(doBtn, true, 'Memproses…');
 
             const body = new FormData();
-            body.append(CSRF_NAME, form.querySelector('input[name="' + CSRF_NAME + '"]').value);
+            body.append(CSRF_NAME, csrfValue());
             body.append('draft_id', doBtn.dataset.draftId || '');
 
             try {
@@ -330,9 +407,10 @@
         }
 
         if (event.target.closest('#btn-again')) {
-            valueInput.value = '';
+            phoneInput.value = '';
+            showFallback(false);
             showIdle();
-            valueInput.focus();
+            phoneInput.focus();
 
             return;
         }
@@ -349,13 +427,27 @@
     // Bila nomor/template diubah, panel konfirmasi jadi basi dan dibuang supaya
     // tombol Reset tidak sempat memakai draft lama. Panel hasil dikecualikan.
     for (const type of ['input', 'change']) {
-        form.addEventListener(type, () => {
+        form.addEventListener(type, (event) => {
             clearErrors();
 
-            if (panelServer.dataset.state === 'preview') {
+            const state = panelServer.dataset.state;
+
+            if (state === 'preview') {
+                showIdle();
+
+                return;
+            }
+
+            // Mengetik di kolom cadangan TIDAK boleh menghapus panel penjelasan
+            // "tidak ketemu" — panel itulah yang sedang dibaca operator. Hanya
+            // mengubah NOMOR yang membatalkan premis "nomor ini tidak ketemu".
+            if (state === 'notfound' && event.target === phoneInput) {
+                showFallback(false);
                 showIdle();
             }
         });
     }
+
+    } // if (form)
 </script>
 <?= $this->endSection() ?>

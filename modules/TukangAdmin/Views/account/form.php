@@ -15,8 +15,7 @@
     <div class="col-lg-7">
         <div class="d-flex align-items-start justify-content-between gap-2 mb-3">
             <div>
-                <h1 class="h3 mb-1">Akun TTE</h1>
-                <p class="text-muted mb-0">Kredensial untuk masuk ke <?= esc($baseUrl) ?> saat reset kata sandi.</p>
+                <h1 class="h3 mb-0">Akun TTE</h1>
             </div>
         </div>
 

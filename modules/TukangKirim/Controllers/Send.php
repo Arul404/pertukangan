@@ -216,7 +216,7 @@ class Send extends BaseController
                     'text'      => $draft['text'],
                     'password'  => $password,
                     'account'   => $outcome['ok'] ? ($outcome['account']['name'] ?? null) : null,
-                    'failed'    => [],
+                    'failed'    => MaxChatDispatcher::failedAttempts($outcome),
                 ],
             ]));
         }

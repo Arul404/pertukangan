@@ -1,0 +1,51 @@
+{
+  "success": true,
+  "message": "List user verifikasi berhasil",
+  "data": {
+    "search": null,
+    "filters": null,
+    "start": 0,
+    "length": 10,
+    "records": 1,
+    "displayRecords": 1,
+    "aaData": [
+      {
+        "id": "da48751e-361d-4bc8-9938-0f27ce0f1e71",
+        "nik": "",
+        "nama": "FAHRUR RAJI",
+        "email": "fahrur.raze@magelangkab.go.id",
+        "jabatan": "Pranata Komputer Ahli Pertama",
+        "kota": null,
+        "provinsi": "JAWA TENGAH",
+        "institution": {
+          "id": "a8d3b5ff-ac13-4561-84a6-62accc17e0be",
+          "oid": "2.16.360.1.2.1.70.10.70.33.08",
+          "code": "KABMAGELANG",
+          "name": "Pemerintah Kab. Magelang",
+          "ca": "OSD-LU-KELAS-2",
+          "products": "Segel Elektronik BSRE CA,Tanda Tangan Elektronik",
+          "enabled": true
+        },
+        "unit_organisasi": "Dinas Komunikasi Dan Informatika",
+        "status": "UPDATE",
+        "nip": "",
+        "phone": "",
+        "products": null,
+        "role": "VERIFIKATOR",
+        "requestDate": "2026-09-06 21:07:28.000+0700",
+        "verifiedDate": null,
+        "fotoId": "4894124",
+        "ktpId": null,
+        "suratRekomId": "4984032",
+        "videoId": null,
+        "verifiedDukcapil": false,
+        "verfifiedLiveness": null,
+        "registeredOrigin": "API",
+        "verifiedVerifikator": false,
+        "verifikator": null,
+        "enrollEsign": true,
+        "phoneVerified": false
+      }
+    ]
+  }
+}

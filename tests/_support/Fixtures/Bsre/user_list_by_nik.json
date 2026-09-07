@@ -1,0 +1,56 @@
+{
+  "success": true,
+  "message": "List user berhasil",
+  "data": {
+    "search": null,
+    "filters": {
+      "nik": "3300000000000001",
+      "institution_id": "a8d3b5ff-ac13-4561-84a6-62accc17e0be"
+    },
+    "start": 0,
+    "length": 10,
+    "records": 1,
+    "displayRecords": 1,
+    "aaData": [
+      {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "nama": "CONTOH PENGGUNA",
+        "phone": "",
+        "nip": "",
+        "nik": "",
+        "emailAddress": "contoh.pengguna@instansi.go.id",
+        "jabatanOrganisasi": "Jabatan Contoh",
+        "products": "Segel Elektronik BSRE CA,Tanda Tangan Elektronik",
+        "organisasi": "Pemerintah Kab. Magelang",
+        "idOrganisasi": "a8d3b5ff-ac13-4561-84a6-62accc17e0be",
+        "organisasiUnit": "Unit Kerja Contoh",
+        "kota": "Magelang",
+        "provinsi": "Jawa Tengah",
+        "status": "VERIFIED",
+        "enabled": true,
+        "createdDate": "2022-10-19 17:08:53.000+0700",
+        "policyAcceptedTimestamp": null,
+        "privacyAcceptedTimestamp": null,
+        "certificateAgreementAcceptedTimestamp": null,
+        "lastUpdatePassword": null,
+        "firstLogin": false,
+        "fotoId": null,
+        "suratRekomId": null,
+        "ktpId": null,
+        "videoId": null,
+        "registeredOrigin": "WEB",
+        "enrollEsign": true,
+        "verifikator": null,
+        "role": "USER",
+        "verifiedVerifikator": false,
+        "segelOwner": false,
+        "certificateStatus": "EXPIRED",
+        "verifiedDukcapil": false,
+        "verfifiedLiveness": null,
+        "linkAktif": null,
+        "base64Rekom": null,
+        "phoneVerified": false
+      }
+    ]
+  }
+}

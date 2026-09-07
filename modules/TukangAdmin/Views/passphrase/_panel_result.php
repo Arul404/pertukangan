@@ -3,6 +3,7 @@
  * Panel kanan, tahap hasil. Disuntikkan lewat fetch() dari passphrase/form.php.
  *
  * @var array<string, mixed> $result
+ * @var string               $draftId
  */
 
 $isVerify = ($result['outcome'] ?? '') === 'verify';
@@ -38,15 +39,28 @@ $isVerify = ($result['outcome'] ?? '') === 'verify';
 </div>
 
 <?php if ($isVerify): ?>
+    <!--
+        Alurnya SELESAI di sini: passphrase belum direset, dan kapan pengguna
+        membuka tautannya tidak bisa ditunggui operator. Panel ini karena itu tidak
+        menawarkan jalan "lanjutkan nanti" yang menyesatkan — arahannya jujur:
+        datang lagi dan cari dari awal.
+    -->
+    <div class="alert alert-warning small mb-3">
+        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+        <strong>Passphrase belum direset.</strong> Yang barusan dikirim hanyalah tautan
+        verifikasi nomor.
+    </div>
+
     <div class="note-box mb-3">
         <i class="bi bi-info-circle me-1"></i>
-        Pengguna perlu membuka tautan verifikasi di WhatsApp-nya lebih dulu. Setelah
-        nomornya terverifikasi, ulangi pencarian email ini untuk melakukan reset passphrase.
+        Pengguna perlu membuka tautan itu di WhatsApp-nya lebih dulu — bisa jadi tidak
+        sekarang. Setelah nomornya terverifikasi, <strong>ulangi pencarian dari awal</strong>
+        di halaman ini untuk mereset passphrase-nya.
     </div>
 <?php endif; ?>
 
 <div class="d-grid">
     <button type="button" id="btn-again" class="btn btn-outline-secondary">
-        <i class="bi bi-arrow-repeat me-1"></i> Reset akun lain
+        <i class="bi bi-arrow-repeat me-1"></i> <?= $isVerify ? 'Cari akun lain' : 'Reset akun lain' ?>
     </button>
 </div>

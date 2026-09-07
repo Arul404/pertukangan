@@ -114,6 +114,33 @@ class MaxChatDispatcher
     }
 
     /**
+     * Percobaan yang gagal dari sebuah outcome {@see self::send()}, untuk panel
+     * hasil ("Dialihkan setelah N akun gagal"). Dibaca di sini karena kelas ini
+     * pula yang membentuk `attempts`.
+     *
+     * @param array<string, mixed> $outcome
+     *
+     * @return list<array{account: string, error: string}>
+     */
+    public static function failedAttempts(array $outcome): array
+    {
+        $failed = [];
+
+        foreach ($outcome['attempts'] ?? [] as $attempt) {
+            if ($attempt['result']['ok']) {
+                continue;
+            }
+
+            $failed[] = [
+                'account' => (string) ($attempt['account']['name'] ?? '?'),
+                'error'   => (string) ($attempt['result']['error'] ?? 'Penyebab tidak diketahui.'),
+            ];
+        }
+
+        return $failed;
+    }
+
+    /**
      * @return array{status: string, ok: bool, http_code: null, body: null, error: string}
      */
     protected function noAccountFailure(): array
